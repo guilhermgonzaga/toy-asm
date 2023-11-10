@@ -11,8 +11,8 @@ RE_ID = r'([_a-z]\w*)'
 # RE_IMM = r'(-[0-8]|[0-9]|1[0-5]|0x[0-9a-f])'
 RE_IMM = r'(-?[0-9]+|0x[0-9a-f]+)'
 RE_MNEMONIC = r'(hlt|in|out|puship|push|drop|dup|add|sub|not|nand|and|slt|shl|shr|jeq|jmp)'
-RE_INSTR = rf'{RE_MNEMONIC}(?:(?<=push) {RE_IMM}|(?<=jmp)(?: {RE_ID})?|(?<!jmp)(?<!push))'
-RE_LINE = rf'^(?:{RE_ID} ?: ?)? ?{RE_INSTR}$'
+RE_INSTR = rf'{RE_MNEMONIC}(?:(?<=push) {RE_IMM}|(?<=jeq|jmp)(?: {RE_ID})?|(?<!jeq|jmp)(?<!push))'
+RE_LINE = rf'^(?:{RE_ID} ?: ?)?{RE_INSTR}$'
 
 OPCODES_LUT = {
 	'hlt':    '0000',
@@ -33,7 +33,7 @@ OPCODES_LUT = {
 	'jmp':    '1111',
 }
 
-# TODO swap; PUSH with label or JEQ with target; shift with immediate
+# TODO swap; shift with immediate
 # Always put label on first instruction
 PSEUDO_LUT = {
 	'not': lambda labl, imm, tget: [
@@ -52,6 +52,11 @@ PSEUDO_LUT = {
 		[None, 'push', imm&15, None],  # Low nibble
 		[None, 'add',  0,      None]
 	],
+	'jeq': lambda labl, imm, tget:
+		PSEUDO_LUT['push'](labl, 0, None) +  # Placeholder immediate (high byte)
+		PSEUDO_LUT['push'](None, 0, None) +  # Placeholder immediate (low byte)
+		[[None, 'jeq',  0, tget]]   # Keep target to resolve later
+	,
 	'jmp': lambda labl, imm, tget:
 		PSEUDO_LUT['push'](labl, 0, None) +  # Placeholder immediate (high byte)
 		PSEUDO_LUT['push'](None, 0, None) +  # Placeholder immediate (low byte)
@@ -141,10 +146,11 @@ def expand_pseudo(pseudo_asm, label_lut: dict[str: int]):
 		if label:
 			label_lut[label] = addr + instr_offset
 
-		# Expand pseudoinstruction, leave the rest
+		# Expand pseudoinstructions, leave the rest
 		if (mnemonic == 'not') or \
 		   (mnemonic == 'and') or \
 		   (mnemonic == 'push' and not -8 <= imm <= 15) or \
+		   (mnemonic == 'jeq' and target) or \
 		   (mnemonic == 'jmp' and target):
 			transl = PSEUDO_LUT[mnemonic](label, imm, target)
 			# print(f'Translating:\n{tokens}\n{transl}\n')
@@ -170,6 +176,7 @@ def gen_code(label_asm: list([str, str, int, str]), label_lut: dict[str: int]):
 			imm_nibble0 = int2nibble(target_addr)
 
 			# Update immediate in corresponding push instructions
+			# Indices work for 'jeq' or 'jmp'; currently, only these set targets
 			code[-9][1] = imm_nibble3
 			code[-7][1] = imm_nibble2
 			code[-4][1] = imm_nibble1
