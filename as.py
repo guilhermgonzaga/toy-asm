@@ -55,24 +55,22 @@ PSEUDO_LUT = {
 	'jeq': lambda labl, imm, tget:
 		PSEUDO_LUT['push'](labl, 0, None) +  # Placeholder immediate (high byte)
 		PSEUDO_LUT['push'](None, 0, None) +  # Placeholder immediate (low byte)
-		[[None, 'jeq',  0, tget]]   # Keep target to resolve later
+		[[None, 'jeq',  0, tget]]            # Keep target to resolve later
 	,
 	'jmp': lambda labl, imm, tget:
 		PSEUDO_LUT['push'](labl, 0, None) +  # Placeholder immediate (high byte)
 		PSEUDO_LUT['push'](None, 0, None) +  # Placeholder immediate (low byte)
-		[[None, 'jmp',  0, tget]]   # Keep target to resolve later
+		[[None, 'jmp',  0, tget]]            # Keep target to resolve later
 	,
 }
 
 
-def imm2int(imm_s: str):
-	if not imm_s:
+def imm2int(imm: str):
+	if imm is None:
 		return 0
 	# Accept hex and decimal
-	return int(imm_s, 16) if '0x' in imm_s else int(imm_s)
+	return int(imm, 16) if '0x' in imm else int(imm)
 
-def int2nibble(imm_i: int):
-	return f'{imm_i & 0xf:04b}'
 
 def preprocess(line: str):
 	line = line.lower()            # Lower case
@@ -80,12 +78,14 @@ def preprocess(line: str):
 	line = ' '.join(line.split())  # Minimize spaces between tokens
 	return line
 
+
 def tokenize(line: str):
 	# Tokenize with regex
 	match = fullmatch(RE_LINE, line)
 
 	# label, mnemonic, immediate, target
 	return list(match.groups()) if match else None
+
 
 def parse(asm_file, label_lut: dict[str: int]):
 	# [label, mnemonic, immediate, target]
@@ -135,6 +135,7 @@ def parse(asm_file, label_lut: dict[str: int]):
 
 	return pseudo_asm
 
+
 def expand_pseudo(pseudo_asm, label_lut: dict[str: int]):
 	label_asm = []
 	instr_offset = 0  # Offset of an instruction after expansion
@@ -161,39 +162,40 @@ def expand_pseudo(pseudo_asm, label_lut: dict[str: int]):
 
 	return label_asm
 
-def gen_code(label_asm: list([str, str, int, str]), label_lut: dict[str: int]):
-	code: list([str, str]) = []   # [opcode, immediate]
 
-	for addr, tokens in enumerate(label_asm):
-		label, mnemonic, imm, target = tokens
+def resolve_targets(label_asm: list([str, str, int, str]), label_lut):
+	for addr, [_, _, _, target] in enumerate(label_asm):
 
-		# Resolve target
 		if target:
 			target_addr = label_lut[target]
-			imm_nibble3 = int2nibble(target_addr >> 12)
-			imm_nibble2 = int2nibble(target_addr >> 8)
-			imm_nibble1 = int2nibble(target_addr >> 4)
-			imm_nibble0 = int2nibble(target_addr)
+			imm_nibble3 = 0xf & (target_addr >> 12)
+			imm_nibble2 = 0xf & (target_addr >> 8)
+			imm_nibble1 = 0xf & (target_addr >> 4)
+			imm_nibble0 = 0xf & (target_addr)
 
-			# Update immediate in corresponding push instructions
-			# Indices work for 'jeq' or 'jmp'; currently, only these set targets
-			code[-9][1] = imm_nibble3
-			code[-7][1] = imm_nibble2
-			code[-4][1] = imm_nibble1
-			code[-2][1] = imm_nibble0
+			# Update immediates in corresponding push instructions
+			# Indices work for 'jeq' and 'jmp'; currently, only these set targets
+			label_asm[addr-9][2] = imm_nibble3
+			label_asm[addr-7][2] = imm_nibble2
+			label_asm[addr-4][2] = imm_nibble1
+			label_asm[addr-2][2] = imm_nibble0
 
-			# Update label_asm for console output
-			# Indices work for 'jeq' or 'jmp'; currently, only these set targets
-			label_asm[addr-9][2] = int(imm_nibble3, 2)
-			label_asm[addr-7][2] = int(imm_nibble2, 2)
-			label_asm[addr-4][2] = int(imm_nibble1, 2)
-			label_asm[addr-2][2] = int(imm_nibble0, 2)
 
+def gen_binary(bin_file, label_asm: list([str, str, int, str])):
+	for addr, [_, mnemonic, imm, _] in enumerate(label_asm):
 		opcode = OPCODES_LUT[mnemonic]
-		imm_bits = int2nibble(imm)
-		code.append([opcode, imm_bits])
+		print(f'{opcode}{imm:04b}', file=bin_file)
 
-	return code
+
+def print_asm(label_asm):
+	# Print parsed code in table format
+	print('----------------------------------------')
+	print('ADDR  LABEL    MNEMONIC IMMEDIATE TARGET')
+	for a, tokens in enumerate(label_asm):
+		l, m, i, t = ['-' if x is None else x for x in tokens]
+		print(f'{a:4}  {l:8} {m:8} {i:<9} {t:8}')
+		# print(*(f'{"-" if t is None else t:<8}' for t in tokens))
+	print('----------------------------------------')
 
 
 def main():
@@ -213,27 +215,18 @@ def main():
 
 	# Pseudoinstruction translation and address resolution
 
-	try:
-		label_asm = expand_pseudo(pseudo_asm, label_lut)
-	except Exception as e:
-		sys.exit(e)
+	label_asm = expand_pseudo(pseudo_asm, label_lut)
+	resolve_targets(label_asm, label_lut)
+	print_asm(label_asm)
 
 	# Binary generation
 
-	code = gen_code(label_asm, label_lut)
-	bin_file = open(output_fname, 'w')
-	for op, imm in code:
-		print(f'{op}{imm}', file=bin_file)
-	bin_file.close()
-
-	# Print parsed code in table format
-	print('----------------------------------------')
-	print('ADDR  LABEL    MNEMONIC IMMEDIATE TARGET')
-	for a, tokens in enumerate(label_asm):
-		l, m, i, t = ['-' if x is None else x for x in tokens]
-		print(f'{a:4}  {l:8} {m:8} {i:<9} {t:8}')
-		# print(*(f'{"-" if t is None else t:<8}' for t in tokens))
-	print('----------------------------------------')
+	try:
+		bin_file = open(output_fname, 'w')
+		gen_binary(bin_file, label_asm)
+		bin_file.close()
+	except Exception as e:
+		sys.exit(e)
 
 
 if __name__ == '__main__':
