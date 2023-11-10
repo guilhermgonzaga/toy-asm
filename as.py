@@ -33,34 +33,30 @@ OPCODES_LUT = {
 	'jmp':    '1111',
 }
 
-# TODO shift with immediate
-PSEUDO_TRANSLATIONS_LUT = {
-	'not': lambda t: [
-		[t[0], 'dup',  0, None],  # Put label on first one
+# TODO swap; PUSH with label or JEQ with target; shift with immediate
+# Always put label on first instruction
+PSEUDO_LUT = {
+	'not': lambda labl, imm, tget: [
+		[labl, 'dup',  0, None],
 		[None, 'nand', 0, None]
 	],
-	'and': lambda t: [
-		[t[0], 'nand', 0, None],  # Put label on first one
+	'and': lambda labl, imm, tget: [
+		[labl, 'nand', 0, None],
 		[None, 'dup',  0, None],
-		[None, 'nand', 0, None],
+		[None, 'nand', 0, None]
 	],
-	'push': lambda t: [
-		[t[0], 'push', 4,       None],  # Put label on first one
-		[None, 'push', t[2]>>4, None],  # High nibble
-		[None, 'shl',  0,       None],
-		[None, 'push', t[2]&15, None],  # Low nibble
-		[None, 'add',  0,       None]
+	'push': lambda labl, imm, tget: [
+		[labl, 'push', 4,      None],
+		[None, 'push', imm>>4, None],  # High nibble
+		[None, 'shl',  0,      None],
+		[None, 'push', imm&15, None],  # Low nibble
+		[None, 'add',  0,      None]
 	],
-	'jmp': lambda t: [
-		[t[0], 'puship', 0, None],  # Put label on first one
-		[None, 'push',   4, None],
-		[None, 'push',   0, None],  # Placeholder immediate
-		[None, 'shl',    0, None],
-		[None, 'push',   0, None],  # Placeholder immediate
-		[None, 'add',    0, None],
-		[None, 'add',    0, None],
-		[None, 'jmp',    0, t[3]]  # Keep target to resolve later
-	],
+	'jmp': lambda labl, imm, tget:
+		PSEUDO_LUT['push'](labl, 0, None) +  # Placeholder immediate (high byte)
+		PSEUDO_LUT['push'](None, 0, None) +  # Placeholder immediate (low byte)
+		[[None, 'jmp',  0, tget]]   # Keep target to resolve later
+	,
 }
 
 
@@ -86,9 +82,11 @@ def tokenize(line: str):
 	# label, mnemonic, immediate, target
 	return list(match.groups()) if match else None
 
-def parse(asm_file, label_lut: {str: int}):
+def parse(asm_file, label_lut: dict[str: int]):
 	# [label, mnemonic, immediate, target]
-	pseudo_asm: [[str, str, int, str]] = []
+	pseudo_asm: list([str, str, int, str]) = []
+
+	# First pass
 
 	for lnum, raw_line in enumerate(asm_file, start=1):
 		line = preprocess(raw_line)
@@ -119,76 +117,69 @@ def parse(asm_file, label_lut: {str: int}):
 				f'{asm_file.name}:{lnum}: immediate does not fit in 8 bits\n'
 				f'{raw_line.strip()}')
 
-		# print(*(f'{f'({x or ''})':10}' for x in tokens))
 		pseudo_asm.append(tokens)
+
+	# Second pass
+
+	# Validate target
+	for lnum, tokens in enumerate(pseudo_asm, start=1):
+		target = tokens[3]
+		if target and target not in label_lut:
+			raise Exception(
+				f'{asm_file.name}:{lnum}: jump targets undefined label "{target}"')
 
 	return pseudo_asm
 
-def translate_pseudo(pseudo_asm, label_lut: {str: int}):
+def expand_pseudo(pseudo_asm, label_lut: dict[str: int]):
 	label_asm = []
-	instr_offset = 0
+	instr_offset = 0  # Offset of an instruction after expansion
 
-	for addr, tokens in enumerate(pseudo_asm, start=1):
+	for addr, tokens in enumerate(pseudo_asm):
 		label, mnemonic, imm, target = tokens
-
-		# Validate target
-		if target and target not in label_lut:
-			raise Exception(f'{addr+1}: jump targets undefined label "{target}"') # TODO filename
 
 		# Update label
 		if label:
 			label_lut[label] = addr + instr_offset
 
-		# Translate
+		# Expand pseudoinstruction, leave the rest
 		if (mnemonic == 'not') or \
 		   (mnemonic == 'and') or \
 		   (mnemonic == 'push' and not -8 <= imm <= 15) or \
 		   (mnemonic == 'jmp' and target):
-			transl = PSEUDO_TRANSLATIONS_LUT[mnemonic](tokens)
-			print(f'Translating\n{tokens}\n{transl}\n')
-			instr_offset += len(transl) - 1
+			transl = PSEUDO_LUT[mnemonic](label, imm, target)
+			# print(f'Translating:\n{tokens}\n{transl}\n')
 			label_asm.extend(transl)
+			instr_offset += len(transl) - 1  # minus the pseudoinstruction
 		else:
 			label_asm.append(tokens)
 
-		# if mnemonic == 'not':
-		# 	transl = [
-		# 		[label, 'dup',  0, None],  # Put label on first one
-		# 		[None,  'nand', 0, None]
-		# 	]
-		# elif mnemonic == 'and':
-		# 	transl = [
-		# 		[label, 'nand', 0, None],  # Put label on first one
-		# 		[None,  'dup',  0, None],
-		# 		[None,  'nand', 0, None],
-		# 	]
-		# elif mnemonic == 'push' and not -8 <= imm <= 15:
-		# 	transl = [
-		# 		[label, 'push', 4,      None],  # Put label on first one
-		# 		[None,  'push', imm>>4, None],  # High nibble
-		# 		[None,  'shl',  0,      None],
-		# 		[None,  'push', imm&15, None],  # Low nibble
-		# 		[None,  'add',  0,      None]
-		# 	]
-		# elif mnemonic == 'jmp' and target:
-		# 	transl = [
-		# 		[label, 'puship', 0,  None],  # Put label on first one
-		# 		[None,  'push',   4,  None],
-		# 		[None,  'push',   0,  None],  # Placeholder immediate
-		# 		[None,  'shl',    0,  None],
-		# 		[None,  'push',   0,  None],  # Placeholder immediate
-		# 		[None,  'add',    0,  None],
-		# 		[None,  'add',    0,  None],
-		# 		[None,  'jmp',    0, target]  # Keep target to resolve later
-		# 	]
-		# else:
-		# 	transl = [tokens]
-		#
-		# print(f'Translating\n{tokens}\n{transl}\n')
-		# instr_offset += len(transl) - 1
-		# label_asm.extend(transl)
-
 	return label_asm
+
+def gen_code(label_asm: list([str, str, int, str]), label_lut: dict[str: int]):
+	code: list([str, str]) = []   # [opcode, immediate]
+
+	for addr, tokens in enumerate(label_asm):
+		label, mnemonic, imm, target = tokens
+
+		# Resolve target
+		if target:
+			target_addr = label_lut[target]
+			imm_nibble3 = int2nibble(target_addr >> 12)
+			imm_nibble2 = int2nibble(target_addr >> 8)
+			imm_nibble1 = int2nibble(target_addr >> 4)
+			imm_nibble0 = int2nibble(target_addr)
+
+			# Update immediate in corresponding push instructions
+			code[-9][1] = imm_nibble3
+			code[-7][1] = imm_nibble2
+			code[-4][1] = imm_nibble1
+			code[-2][1] = imm_nibble0
+
+		opcode = OPCODES_LUT[mnemonic]
+		imm_bits = int2nibble(imm)
+		code.append([opcode, imm_bits])
+
+	return code
 
 
 def main():
@@ -197,7 +188,7 @@ def main():
 
 	# Source analysis
 
-	label_lut: {str: int} = {}  # (label -> address)
+	label_lut: dict[str: int] = {}  # (label -> address)
 
 	try:
 		asm_file = open(input_fname, 'r')
@@ -206,42 +197,24 @@ def main():
 	except Exception as e:
 		sys.exit(e)
 
-	# Pseudoinstruction translation and label resolution
+	# Pseudoinstruction translation and address resolution
 
 	try:
-		label_asm = translate_pseudo(pseudo_asm, label_lut)
+		label_asm = expand_pseudo(pseudo_asm, label_lut)
 	except Exception as e:
 		sys.exit(e)
 
-	print('------------------------------')
-	print(*(x for x in pseudo_asm), sep='\n')
-	print('------------------------------')
-	print(*(x for x in label_asm), sep='\n')
-	print('------------------------------')
-
-	# Jump target resolution and binary generation
-
-	bin_code: [[str, str]] = []   # [opcode, immediate]
-
+	print('----------------------------------------')
 	for addr, tokens in enumerate(label_asm):
-		label, mnemonic, imm, target = tokens
+		print(f'{addr:3}  ', end='')
+		print(*(f'{"-" if t is None else t:<8}' for t in tokens))
+	print('----------------------------------------')
 
-		# Resolve target
-		if target:
-			target_addr = label_lut[target]
-			imm_bits_h = int2nibble(target_addr>>4)
-			imm_bits_l = int2nibble(target_addr)
+	# Binary generation
 
-			# Update immediate in corresponding push instructions
-			bin_code[addr-5][1] = imm_bits_h
-			bin_code[addr-3][1] = imm_bits_l
-
-		opcode = OPCODES_LUT[mnemonic]
-		imm_bits = int2nibble(imm)
-		bin_code.append([opcode, imm_bits])
-
+	code = gen_code(label_asm, label_lut)
 	bin_file = open(output_fname, 'w')
-	for op, imm in bin_code:
+	for op, imm in code:
 		print(f'{op}{imm}', file=bin_file)
 	bin_file.close()
 
