@@ -182,6 +182,13 @@ def gen_code(label_asm: list([str, str, int, str]), label_lut: dict[str: int]):
 			code[-4][1] = imm_nibble1
 			code[-2][1] = imm_nibble0
 
+			# Update label_asm for console output
+			# Indices work for 'jeq' or 'jmp'; currently, only these set targets
+			label_asm[addr-9][2] = int(imm_nibble3, 2)
+			label_asm[addr-7][2] = int(imm_nibble2, 2)
+			label_asm[addr-4][2] = int(imm_nibble1, 2)
+			label_asm[addr-2][2] = int(imm_nibble0, 2)
+
 		opcode = OPCODES_LUT[mnemonic]
 		imm_bits = int2nibble(imm)
 		code.append([opcode, imm_bits])
@@ -211,12 +218,6 @@ def main():
 	except Exception as e:
 		sys.exit(e)
 
-	print('----------------------------------------')
-	for addr, tokens in enumerate(label_asm):
-		print(f'{addr:3}  ', end='')
-		print(*(f'{"-" if t is None else t:<8}' for t in tokens))
-	print('----------------------------------------')
-
 	# Binary generation
 
 	code = gen_code(label_asm, label_lut)
@@ -224,6 +225,15 @@ def main():
 	for op, imm in code:
 		print(f'{op}{imm}', file=bin_file)
 	bin_file.close()
+
+	# Print parsed code in table format
+	print('----------------------------------------')
+	print('ADDR  LABEL    MNEMONIC IMMEDIATE TARGET')
+	for a, tokens in enumerate(label_asm):
+		l, m, i, t = ['-' if x is None else x for x in tokens]
+		print(f'{a:4}  {l:8} {m:8} {i:<9} {t:8}')
+		# print(*(f'{"-" if t is None else t:<8}' for t in tokens))
+	print('----------------------------------------')
 
 
 if __name__ == '__main__':
