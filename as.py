@@ -65,11 +65,19 @@ PSEUDO_LUT = {
 }
 
 
-def imm2int(imm: str):
-	if imm is None:
+def imm2int(imm_s: str):
+	if imm_s is None:
 		return 0
+
 	# Accept hex and decimal
-	return int(imm, 16) if '0x' in imm else int(imm)
+	imm_i = int(imm_s, 16) if '0x' in imm_s else int(imm_s)
+
+	# Validate range
+	if not -128 <= imm_i <= 255:
+		return None
+
+	# Reset sign bits
+	return imm_i & 0xff
 
 
 def preprocess(line: str):
@@ -101,7 +109,7 @@ def parse(asm_file, label_lut: dict[str: int]):
 			continue
 
 		tokens = tokenize(line)
-		if not tokens:
+		if tokens is None:
 			raise Exception(
 				f'{asm_file.name}:{lnum}: invalid syntax\n'
 				f'{raw_line.strip()}')
@@ -117,7 +125,7 @@ def parse(asm_file, label_lut: dict[str: int]):
 
 		# Validate immediate
 		tokens[2] = imm2int(tokens[2])
-		if not -128 <= tokens[2] <= 255:
+		if tokens[2] is None:
 			raise Exception(
 				f'{asm_file.name}:{lnum}: immediate does not fit in 8 bits\n'
 				f'{raw_line.strip()}')
@@ -150,7 +158,7 @@ def expand_pseudo(pseudo_asm, label_lut: dict[str: int]):
 		# Expand pseudoinstructions, leave the rest
 		if (mnemonic == 'not') or \
 		   (mnemonic == 'and') or \
-		   (mnemonic == 'push' and not -8 <= imm <= 15) or \
+		   (mnemonic == 'push' and imm > 15) or \
 		   (mnemonic == 'jeq' and target) or \
 		   (mnemonic == 'jmp' and target):
 			transl = PSEUDO_LUT[mnemonic](label, imm, target)
@@ -171,7 +179,7 @@ def resolve_targets(label_asm: list([str, str, int, str]), label_lut):
 			imm_nibble3 = 0xf & (target_addr >> 12)
 			imm_nibble2 = 0xf & (target_addr >> 8)
 			imm_nibble1 = 0xf & (target_addr >> 4)
-			imm_nibble0 = 0xf & (target_addr)
+			imm_nibble0 = 0xf & target_addr
 
 			# Update immediates in corresponding push instructions
 			# Indices work for 'jeq' and 'jmp'; currently, only these set targets
@@ -189,13 +197,12 @@ def gen_binary(bin_file, label_asm: list([str, str, int, str])):
 
 def print_asm(label_asm):
 	# Print parsed code in table format
-	print('----------------------------------------')
-	print('ADDR  LABEL    MNEMONIC IMMEDIATE TARGET')
+	print('------------------------------------------')
+	print('ADDR  LABEL    MNEMONIC  IMMEDIATE  TARGET')
 	for a, tokens in enumerate(label_asm):
 		l, m, i, t = ['-' if x is None else x for x in tokens]
-		print(f'{a:4}  {l:8} {m:8} {i:<9} {t:8}')
-		# print(*(f'{"-" if t is None else t:<8}' for t in tokens))
-	print('----------------------------------------')
+		print(f'{a:>4}  {l:<8} {m:<8}  {i:>2}  {i:04b}   {t:<8}')
+	print('------------------------------------------')
 
 
 def main():
