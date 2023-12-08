@@ -8,9 +8,8 @@ from re import fullmatch
 
 # Regex patterns tokenize and validate syntax
 RE_ID = r'([_a-z]\w*)'
-# RE_IMM = r'(-[0-8]|[0-9]|1[0-5]|0x[0-9a-f])'
 RE_IMM = r'(-?[0-9]+|0x[0-9a-f]+)'
-RE_MNEMONIC = r'(hlt|in|out|puship|push|drop|dup|add|sub|not|nand|and|or|slt|shl|shr|swp|jeq|jmp)'
+RE_MNEMONIC = r'(hlt|in|out|puship|push|drop|dup|add|sub|inc|dec|not|nand|and|or|slt|shl|shr|swp|jeq|jmp)'
 RE_INSTR = rf'{RE_MNEMONIC}(?:(?<=push) {RE_IMM}|(?<=jeq|jmp)(?: {RE_ID})?|(?<!jeq|jmp)(?<!push))'
 RE_LINE = rf'^(?:{RE_ID} ?: ?)?{RE_INSTR}$'
 
@@ -36,6 +35,15 @@ OPCODES_LUT = {
 # TODO shift with immediate
 # Always put label on first instruction
 PSEUDO_LUT = {
+	'inc': lambda labl, imm, tget: [
+		[labl, 'push', 1, None],
+		[None, 'add',  0, None]
+	],
+	'dec': lambda labl, imm, tget: [
+		[labl, 'push', 1, None],
+		[None, 'swp',  0, None],
+		[None, 'sub',  0, None]
+	],
 	'not': lambda labl, imm, tget: [
 		[labl, 'dup',  0, None],
 		[None, 'nand', 0, None]
@@ -164,9 +172,7 @@ def expand_pseudo(pseudo_asm, label_lut: dict[str: int]):
 			label_lut[label] = addr + instr_offset
 
 		# Expand pseudoinstructions, leave the rest
-		if (mnemonic == 'not') or \
-		   (mnemonic == 'and') or \
-		   (mnemonic == 'or') or \
+		if (mnemonic in ('inc', 'dec', 'not', 'and', 'or')) or \
 		   (mnemonic == 'push' and imm > 15) or \
 		   (mnemonic == 'jeq' and target) or \
 		   (mnemonic == 'jmp' and target):
