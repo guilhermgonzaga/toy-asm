@@ -10,10 +10,7 @@
 loop1:	dup
 	push 0
 	jeq brk1	; jump if half of input consumed
-
-	push 1
-	swp
-	sub		; decrement size
+	dec		; decrement size
 
 	in		; get char
 	swp		; bring size to TOS

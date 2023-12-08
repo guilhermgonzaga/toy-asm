@@ -6,9 +6,7 @@ loop:	dup
 	push 0
 	jeq end		; zero marks end of input
 
-	push 1		; count -= 1
-	swp
-	sub
+	dec		; count -= 1
 
 	in		; work
 	out
