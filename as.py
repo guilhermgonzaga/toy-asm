@@ -10,7 +10,7 @@ from re import fullmatch
 RE_ID = r'([_a-z]\w*)'
 # RE_IMM = r'(-[0-8]|[0-9]|1[0-5]|0x[0-9a-f])'
 RE_IMM = r'(-?[0-9]+|0x[0-9a-f]+)'
-RE_MNEMONIC = r'(hlt|in|out|puship|push|drop|dup|add|sub|not|nand|and|slt|shl|shr|swp|jeq|jmp)'
+RE_MNEMONIC = r'(hlt|in|out|puship|push|drop|dup|add|sub|not|nand|and|or|slt|shl|shr|swp|jeq|jmp)'
 RE_INSTR = rf'{RE_MNEMONIC}(?:(?<=push) {RE_IMM}|(?<=jeq|jmp)(?: {RE_ID})?|(?<!jeq|jmp)(?<!push))'
 RE_LINE = rf'^(?:{RE_ID} ?: ?)?{RE_INSTR}$'
 
@@ -43,6 +43,14 @@ PSEUDO_LUT = {
 	'and': lambda labl, imm, tget: [
 		[labl, 'nand', 0, None],
 		[None, 'dup',  0, None],
+		[None, 'nand', 0, None]
+	],
+	'or': lambda labl, imm, tget: [
+		[labl, 'dup',  0, None],
+		[None, 'nand', 0, None],
+		[None, 'swp',  0, None],
+		[None, 'dup',  0, None],
+		[None, 'nand', 0, None],
 		[None, 'nand', 0, None]
 	],
 	'push': lambda labl, imm, tget: [
@@ -158,6 +166,7 @@ def expand_pseudo(pseudo_asm, label_lut: dict[str: int]):
 		# Expand pseudoinstructions, leave the rest
 		if (mnemonic == 'not') or \
 		   (mnemonic == 'and') or \
+		   (mnemonic == 'or') or \
 		   (mnemonic == 'push' and imm > 15) or \
 		   (mnemonic == 'jeq' and target) or \
 		   (mnemonic == 'jmp' and target):
