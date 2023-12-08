@@ -2,15 +2,17 @@
 
 	in		; size of array
 
-L1:	dup
+loop:	dup
 	push 0
-	jeq end		; (pseudo) push 16-bit address, then jmp
+	jeq end		; zero marks end of input
+
 	push 1		; count -= 1
+	swp
 	sub
 
 	in		; work
 	out
 
-	jmp L1		; (pseudo) push 16-bit address, then jmp
+	jmp loop
 
 end:	hlt
