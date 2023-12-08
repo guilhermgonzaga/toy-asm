@@ -10,7 +10,7 @@ from re import fullmatch
 RE_ID = r'([_a-z]\w*)'
 # RE_IMM = r'(-[0-8]|[0-9]|1[0-5]|0x[0-9a-f])'
 RE_IMM = r'(-?[0-9]+|0x[0-9a-f]+)'
-RE_MNEMONIC = r'(hlt|in|out|puship|push|drop|dup|add|sub|not|nand|and|slt|shl|shr|jeq|jmp)'
+RE_MNEMONIC = r'(hlt|in|out|puship|push|drop|dup|add|sub|not|nand|and|slt|shl|shr|swp|jeq|jmp)'
 RE_INSTR = rf'{RE_MNEMONIC}(?:(?<=push) {RE_IMM}|(?<=jeq|jmp)(?: {RE_ID})?|(?<!jeq|jmp)(?<!push))'
 RE_LINE = rf'^(?:{RE_ID} ?: ?)?{RE_INSTR}$'
 
@@ -22,7 +22,7 @@ OPCODES_LUT = {
 	'push':   '0100',
 	'drop':   '0101',
 	'dup':    '0110',
-	         # 0111 does not exist (reserved)
+	'swp':    '0111',
 	'add':    '1000',
 	'sub':    '1001',
 	'nand':   '1010',
@@ -33,7 +33,7 @@ OPCODES_LUT = {
 	'jmp':    '1111',
 }
 
-# TODO swap; shift with immediate
+# TODO shift with immediate
 # Always put label on first instruction
 PSEUDO_LUT = {
 	'not': lambda labl, imm, tget: [
