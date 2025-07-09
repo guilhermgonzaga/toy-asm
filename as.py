@@ -9,8 +9,8 @@ from re import fullmatch
 # Regex patterns tokenize and validate syntax
 RE_ID = r'([_a-z]\w*)'
 RE_IMM = r'(-?[0-9]+|0x[0-9a-f]+)'
-RE_MNEMONIC = r'(hlt|in|out|puship|push|drop|dup|add|sub|inc|dec|not|nand|and|or|slt|shl|shr|swp|jeq|jmp)'
-RE_INSTR = rf'{RE_MNEMONIC}(?:(?<=push) {RE_IMM}|(?<=jeq|jmp)(?: {RE_ID})?|(?<!jeq|jmp)(?<!push))'
+RE_MNEMONIC = r'(hlt|in|out|puship|push|drop|dup|add|sub|inc|dec|not|nand|and|or|slt|shl|shr|swp|beq|jmp)'
+RE_INSTR = rf'{RE_MNEMONIC}(?:(?<=push) {RE_IMM}|(?<=beq|jmp)(?: {RE_ID})?|(?<!beq|jmp)(?<!push))'
 RE_LINE = rf'^(?:{RE_ID} ?: ?)?{RE_INSTR}$'
 
 OPCODES_LUT = {
@@ -28,12 +28,11 @@ OPCODES_LUT = {
 	'slt':    '1011',
 	'shl':    '1100',
 	'shr':    '1101',
-	'jeq':    '1110',
+	'beq':    '1110',
 	'jmp':    '1111',
 }
 
-# TODO shift with immediate
-# Always put label on first instruction
+# Label must always be put on first instruction
 PSEUDO_LUT = {
 	'inc': lambda labl, imm, tget: [
 		[labl, 'push', 1, None],
@@ -63,19 +62,19 @@ PSEUDO_LUT = {
 	],
 	'push': lambda labl, imm, tget: [
 		[labl, 'push', 4,      None],
-		[None, 'push', imm>>4, None],  # High nibble
+		[None, 'push', imm>>4, None],  # Upper nibble
 		[None, 'shl',  0,      None],
-		[None, 'push', imm&15, None],  # Low nibble
+		[None, 'push', imm&15, None],  # Lower nibble
 		[None, 'add',  0,      None]
 	],
-	'jeq': lambda labl, imm, tget:
-		PSEUDO_LUT['push'](labl, 0, None) +  # Placeholder immediate (high byte)
-		PSEUDO_LUT['push'](None, 0, None) +  # Placeholder immediate (low byte)
-		[[None, 'jeq',  0, tget]]            # Keep target to resolve later
+	'beq': lambda labl, imm, tget:
+		PSEUDO_LUT['push'](labl, 0, None) +  # Placeholder immediate (upper byte)
+		PSEUDO_LUT['push'](None, 0, None) +  # Placeholder immediate (lower byte)
+		[[None, 'beq',  0, tget]]            # Keep target to resolve later
 	,
 	'jmp': lambda labl, imm, tget:
-		PSEUDO_LUT['push'](labl, 0, None) +  # Placeholder immediate (high byte)
-		PSEUDO_LUT['push'](None, 0, None) +  # Placeholder immediate (low byte)
+		PSEUDO_LUT['push'](labl, 0, None) +  # Placeholder immediate (upper byte)
+		PSEUDO_LUT['push'](None, 0, None) +  # Placeholder immediate (lower byte)
 		[[None, 'jmp',  0, tget]]            # Keep target to resolve later
 	,
 }
@@ -107,7 +106,7 @@ def tokenize(line: str):
 	# Tokenize with regex
 	match = fullmatch(RE_LINE, line)
 
-	# label, mnemonic, immediate, target
+	# [label, mnemonic, immediate, target]
 	return list(match.groups()) if match else None
 
 
@@ -150,12 +149,12 @@ def parse(asm_file, label_lut: dict[str: int]):
 
 	# Second pass
 
-	# Validate target
+	# Validate targets
 	for lnum, tokens in enumerate(pseudo_asm, start=1):
 		target = tokens[3]
 		if target and target not in label_lut:
 			raise Exception(
-				f'{asm_file.name}:{lnum}: jump targets undefined label "{target}"')
+				f'{asm_file.name}:{lnum}: undefined label "{target}"')
 
 	return pseudo_asm
 
@@ -172,9 +171,10 @@ def expand_pseudo(pseudo_asm, label_lut: dict[str: int]):
 			label_lut[label] = addr + instr_offset
 
 		# Expand pseudoinstructions, leave the rest
+		# 'beq' and 'jmp' are pseudoinstructions iff symbolic targets are given
 		if (mnemonic in ('inc', 'dec', 'not', 'and', 'or')) or \
 		   (mnemonic == 'push' and imm > 15) or \
-		   (mnemonic == 'jeq' and target) or \
+		   (mnemonic == 'beq' and target) or \
 		   (mnemonic == 'jmp' and target):
 			transl = PSEUDO_LUT[mnemonic](label, imm, target)
 			# print(f'Translating:\n{tokens}\n{transl}\n')
@@ -197,7 +197,7 @@ def resolve_targets(label_asm: list([str, str, int, str]), label_lut):
 			imm_nibble0 = 0xf & target_addr
 
 			# Update immediates in corresponding push instructions
-			# Indices work for 'jeq' and 'jmp'; currently, only these set targets
+			# Indices work for 'beq' and 'jmp'; currently, only these set targets
 			label_asm[addr-9][2] = imm_nibble3
 			label_asm[addr-7][2] = imm_nibble2
 			label_asm[addr-4][2] = imm_nibble1

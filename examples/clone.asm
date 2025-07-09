@@ -4,7 +4,7 @@
 
 loop:	dup
 	push 0
-	jeq end		; zero marks end of input
+	beq end		; zero marks end of input
 
 	dec		; count -= 1
 

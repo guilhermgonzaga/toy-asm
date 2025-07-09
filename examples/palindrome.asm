@@ -5,16 +5,16 @@
 loop1:	in		; get char
 	dup
 	push 0
-	jeq loop2	; byte 0 marks half of input
+	beq loop2	; byte 0 marks half of input
 
 	jmp loop1	; continue loop
 
 loop2:	in		; get char
 	dup
 	push 0
-	jeq valid	; byte 0 marks end of input
+	beq valid	; byte 0 marks end of input
 
-	jeq loop2	; continue loop if chars match
+	beq loop2	; continue loop if chars match
 
 	push 0		; it is not a palindrome
 	jmp end

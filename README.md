@@ -21,7 +21,7 @@ A toy assembler for a toy architecture.
 	+ `or`: Bitwise OR the two topmost bytes on the stack.
 	+ `push`: Ability to push an 8-bit immediate.
 	+ `jmp`: Ability to set a label as a target.
-	+ `jeq`: Ability to set a label as a target.
+	+ `beq`: Ability to set a label as a target.
 
 ## General Syntax
 
@@ -51,5 +51,5 @@ All instructions are 8 bits wide and there is only one format, which is a 4-bit 
 	1011 slt:    Pop Op1 and Op2 and push (Op1 < Op2).
 	1100 shl:    Pop Op1 and Op2 and push (Op1 << Op2).
 	1101 shr:    Pop Op1 and Op2 and push (Op1 >> Op2).
-	1110 jeq:    Pop Op1 (2 bytes), Op2 (1 bytes) and Op3 (1 byte) and assign IP = Op3 if Op1 == Op2.
+	1110 beq:    Pop Op1 (2 bytes), Op2 (1 bytes) and Op3 (1 byte) and assign IP = Op3 if Op1 == Op2.
 	1111 jmp:    Pop Op1 (2 bytes) and assign IP = Op1.

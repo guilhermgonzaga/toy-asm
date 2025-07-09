@@ -9,7 +9,7 @@
 
 loop1:	dup
 	push 0
-	jeq brk1	; jump if half of input consumed
+	beq brk1	; jump if half of input consumed
 	dec		; decrement size
 
 	in		; get char
@@ -21,10 +21,10 @@ brk1:	drop		; discard zero
 
 loop2:	dup
 	push 0
-	jeq valid	; jump if stack is empty
+	beq valid	; jump if stack is empty
 
 	in
-	jeq loop2	; continue loop if chars match
+	beq loop2	; continue loop if chars match
 
 	push 0		; it is not a palindrome
 	jmp end
