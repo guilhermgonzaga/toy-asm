@@ -172,6 +172,7 @@ def expand_pseudo(pseudo_asm, label_lut: dict[str: int]):
 			label_lut[label] = addr + instr_offset
 
 		# Expand pseudoinstructions, leave the rest
+		# 'jeq' and 'jmp' are pseudoinstructions iff with targets
 		if (mnemonic in ('inc', 'dec', 'not', 'and', 'or')) or \
 		   (mnemonic == 'push' and imm > 15) or \
 		   (mnemonic == 'jeq' and target) or \
