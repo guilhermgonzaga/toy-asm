@@ -22,6 +22,7 @@ A toy assembler for a toy architecture.
 	+ `push`: Ability to push an 8-bit immediate.
 	+ `jmp`: Ability to set a label as a target.
 	+ `jeq`: Ability to set a label as a target.
+	+ `jz`: Jump to given target if the topmost byte on the stack is zero.
 
 ## General Syntax
 

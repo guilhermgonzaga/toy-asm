@@ -9,8 +9,8 @@ from re import fullmatch
 # Regex patterns tokenize and validate syntax
 RE_ID = r'([_a-z]\w*)'
 RE_IMM = r'(-?[0-9]+|0x[0-9a-f]+)'
-RE_MNEMONIC = r'(hlt|in|out|puship|push|drop|dup|add|sub|inc|dec|not|nand|and|or|slt|shl|shr|swp|jeq|jmp)'
-RE_INSTR = rf'{RE_MNEMONIC}(?:(?<=push) {RE_IMM}|(?<=jeq|jmp)(?: {RE_ID})?|(?<!jeq|jmp)(?<!push))'
+RE_MNEMONIC = r'(hlt|in|out|puship|push|drop|dup|add|sub|inc|dec|not|nand|and|or|slt|shl|shr|swp|jeq|jmp|jz)'
+RE_INSTR = rf'{RE_MNEMONIC}(?:(?<=push) {RE_IMM}|(?:(?<=jz)|(?<=jeq|jmp))(?: {RE_ID})?|(?<!jeq|jmp)(?<!jz)(?<!push))'
 RE_LINE = rf'^(?:{RE_ID} ?: ?)?{RE_INSTR}$'
 
 OPCODES_LUT = {
@@ -77,6 +77,10 @@ PSEUDO_LUT = {
 		PSEUDO_LUT['push'](labl, 0, None) +  # Placeholder immediate (high byte)
 		PSEUDO_LUT['push'](None, 0, None) +  # Placeholder immediate (low byte)
 		[[None, 'jmp',  0, tget]]            # Keep target to resolve later
+	,
+	'jz': lambda labl, imm, tget:
+		[[labl, 'push', 0, None]] +       # Push 0 for comparison
+		PSEUDO_LUT['jeq'](None, 0, tget)  # Keep target to resolve later
 	,
 }
 
@@ -172,8 +176,8 @@ def expand_pseudo(pseudo_asm, label_lut: dict[str: int]):
 			label_lut[label] = addr + instr_offset
 
 		# Expand pseudoinstructions, leave the rest
-		# 'jeq' and 'jmp' are pseudoinstructions iff with targets
-		if (mnemonic in ('inc', 'dec', 'not', 'and', 'or')) or \
+		# 'jeq' and 'jmp' (not 'jz') are pseudoinstructions iff with targets
+		if (mnemonic in ('inc', 'dec', 'not', 'and', 'or', 'jz')) or \
 		   (mnemonic == 'push' and imm > 15) or \
 		   (mnemonic == 'jeq' and target) or \
 		   (mnemonic == 'jmp' and target):
@@ -198,7 +202,7 @@ def resolve_targets(label_asm: list([str, str, int, str]), label_lut):
 			imm_nibble0 = 0xf & target_addr
 
 			# Update immediates in corresponding push instructions
-			# Indices work for 'jeq' and 'jmp'; currently, only these set targets
+			# Indices work for 'jeq', 'jmp', 'jz'; currently, only these set targets
 			label_asm[addr-9][2] = imm_nibble3
 			label_asm[addr-7][2] = imm_nibble2
 			label_asm[addr-4][2] = imm_nibble1
