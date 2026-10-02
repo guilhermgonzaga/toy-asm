@@ -3,6 +3,7 @@
 Assembler for a simple stack-based architecture.
 """
 
+import shutil
 import sys
 from re import fullmatch
 
@@ -13,7 +14,7 @@ RE_MNEMONIC = r'(hlt|in|out|puship|push|drop|dup|add|sub|inc|dec|not|nand|and|or
 RE_INSTR = rf'{RE_MNEMONIC}(?:(?<=push) {RE_IMM}|(?<=beq|jmp)(?: {RE_ID})?|(?<!beq|jmp)(?<!push))'
 RE_LINE = rf'^(?:{RE_ID} ?: ?)?{RE_INSTR}$'
 
-OPCODES_LUT = {
+OPCODES_LUT: dict[str, str] = {
 	'hlt':    '0000',
 	'in':     '0001',
 	'out':    '0010',
@@ -95,10 +96,19 @@ def imm2int(imm_s: str):
 	return imm_i & 0xff
 
 
+def truncate_line(line: str):
+	"""Truncate a line to fit the terminal."""
+	max_width = min(80, shutil.get_terminal_size()[0])
+	line = line.lstrip().expandtabs(4)
+	if len(line) > max_width:
+		line = line[:max_width-3] + '...'
+	return line
+
+
 def preprocess(line: str):
 	line = line.lower()            # Lower case
 	line = line.partition(';')[0]  # Remove comment if present
-	line = ' '.join(line.split())  # Minimize spaces between tokens
+	line = ' '.join(line.split())  # Minimize whitespace between tokens
 	return line
 
 
@@ -123,38 +133,44 @@ def parse(asm_file, label_lut: dict[str: int]):
 		if not line:
 			continue
 
+		if not line.isascii() or not line.isprintable():
+			raise Exception(
+				f'{asm_file.name}:{lnum}: '
+				'illegal characters in code; only printable ASCII characters are allowed outside of comments.\n'
+				f'{truncate_line(raw_line)}')
+
 		tokens = tokenize(line)
 		if tokens is None:
 			raise Exception(
-				f'{asm_file.name}:{lnum}: invalid syntax\n'
-				f'{raw_line.strip()}')
+				f'{asm_file.name}:{lnum}: invalid syntax.\n'
+				f'{truncate_line(raw_line)}')
 
 		# Validate label
 		if label := tokens[0]:
 			if label in label_lut:
 				raise Exception(
 					f'{asm_file.name}:{lnum}: '
-					f'label already in use (first defined on line {label_lut[label]})\n'
-					f'{raw_line.strip()}')
+					f'label already in use (first defined on line {label_lut[label]}).\n'
+					f'{truncate_line(raw_line)}')
 			label_lut[label] = lnum  # Not the definitive value
 
 		# Validate immediate
 		tokens[2] = imm2int(tokens[2])
 		if tokens[2] is None:
 			raise Exception(
-				f'{asm_file.name}:{lnum}: immediate does not fit in 8 bits\n'
-				f'{raw_line.strip()}')
+				f'{asm_file.name}:{lnum}: immediate does not fit in 8 bits.\n'
+				f'{truncate_line(raw_line)}')
 
 		pseudo_asm.append(tokens)
 
 	# Second pass
 
-	# Validate targets
+	# Validate symbolic targets
 	for lnum, tokens in enumerate(pseudo_asm, start=1):
 		target = tokens[3]
 		if target and target not in label_lut:
 			raise Exception(
-				f'{asm_file.name}:{lnum}: undefined label "{target}"')
+				f'{asm_file.name}:{lnum}: undefined label "{target}".')
 
 	return pseudo_asm
 
@@ -211,7 +227,7 @@ def gen_binary(bin_file, label_asm: list([str, str, int, str])):
 
 
 def print_asm(label_asm):
-	# Print parsed code in table format
+	# Print instruction records in table format
 	print('------------------------------------------')
 	print('ADDR  LABEL    MNEMONIC  IMMEDIATE  TARGET')
 	for a, tokens in enumerate(label_asm):
@@ -229,9 +245,8 @@ def main():
 	label_lut: dict[str: int] = {}  # (label -> address)
 
 	try:
-		asm_file = open(input_fname, 'r')
-		pseudo_asm = parse(asm_file, label_lut)
-		asm_file.close()
+		with open(input_fname, 'r') as asm_file:
+			pseudo_asm = parse(asm_file, label_lut)
 	except Exception as e:
 		sys.exit(e)
 
@@ -244,9 +259,8 @@ def main():
 	# Binary generation
 
 	try:
-		bin_file = open(output_fname, 'w')
-		gen_binary(bin_file, label_asm)
-		bin_file.close()
+		with open(output_fname, 'w') as bin_file:
+			gen_binary(bin_file, label_asm)
 	except Exception as e:
 		sys.exit(e)
 
