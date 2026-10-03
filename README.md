@@ -4,13 +4,13 @@ A toy assembler for a toy architecture.
 
 ## Features
 
-- Support for line comments started by `;`
+- Line comments started by `;`
 
-- Support for labels
+	Text inside comments is not restricted to the ASCII character set.
 
-	Labels cannot be redefined and there must be at most one per instruction.
+- Symbolic addressing
 
-- Jump target resolution
+	Symbols follow the same rules as identifiers in C. Also, labels must be defined only once in the source.
 
 - Pseudo-instructions
 
@@ -29,11 +29,11 @@ A toy assembler for a toy architecture.
 label ":" opcode [immediate|target] ";" comment
 ```
 
-The immediate may be a signed decimal or a hexadecimal pattern preceded by `0x`. The only restriction is that it fits in 8 bits.
+The immediate may be a signed decimal or a hexadecimal pattern (always preceded by `0x`). The only restriction is that it fits into the 4-bit immediate field, otherwise a syntax error is reported.
 
-Labels and targets are translated to 16-bit addresses. Also, a label cannot be placed on a line without an instruction.
+Labels and targets are translated to 16-bit addresses and placed in code during pseudoinstruction expansion. Currently, a label cannot be placed on a line without an instruction.
 
-## Instruction-set description
+## Instruction-set Description
 
 All instructions are 8 bits wide and there is only one format, which is a 4-bit opcode followed by a 4-bit immediate. Instructions that don't need the immediate must have it set to all zeros.
 
