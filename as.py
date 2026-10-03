@@ -3,9 +3,9 @@
 Assembler for a simple stack-based architecture.
 """
 
+import re
 import shutil
 import sys
-from re import fullmatch
 
 # Regex patterns tokenize and validate syntax
 RE_ID = r'([_a-z]\w*)'
@@ -13,6 +13,7 @@ RE_IMM = r'(-?[0-9]+|0x[0-9a-f]+)'
 RE_MNEMONIC = r'(hlt|in|out|puship|push|drop|dup|add|sub|inc|dec|not|nand|and|or|slt|shl|shr|swp|beq|jmp)'
 RE_INSTR = rf'{RE_MNEMONIC}(?:(?<=push) {RE_IMM}|(?<=beq|jmp)(?: {RE_ID})?|(?<!beq|jmp)(?<!push))'
 RE_LINE = rf'^(?:{RE_ID} ?: ?)?{RE_INSTR}$'
+RE_PATTERN = re.compile(RE_LINE, re.ASCII | re.IGNORECASE)
 
 OPCODES_LUT: dict[str, str] = {
 	'hlt':    '0000',
@@ -105,8 +106,7 @@ def truncate_line(line: str):
 	return line
 
 
-def preprocess(line: str):
-	line = line.lower()            # Lower case
+def reconstruct_line(line: str):
 	line = line.partition(';')[0]  # Remove comment if present
 	line = ' '.join(line.split())  # Minimize whitespace between tokens
 	return line
@@ -114,7 +114,7 @@ def preprocess(line: str):
 
 def tokenize(line: str):
 	# Tokenize with regex
-	match = fullmatch(RE_LINE, line)
+	match = re.fullmatch(RE_PATTERN, line)
 
 	# [label, mnemonic, immediate, target]
 	return list(match.groups()) if match else None
@@ -127,7 +127,7 @@ def parse(asm_file, label_lut: dict[str: int]):
 	# First pass
 
 	for lnum, raw_line in enumerate(asm_file, start=1):
-		line = preprocess(raw_line)
+		line = reconstruct_line(raw_line)
 
 		# Skip empty lines
 		if not line:
