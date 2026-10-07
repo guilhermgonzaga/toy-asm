@@ -7,34 +7,46 @@ import re
 import shutil
 import sys
 
-# Regex patterns tokenize and validate syntax
-RE_ID = r'([_a-z]\w*)'
-RE_IMM = r'(-?[0-9]+|0x[0-9a-f]+)'
+# Regex patterns used for parsing
+RE_LABEL = r'([_a-z][_a-z0-9]*)'
+RE_IMMED = r'(-?[0-9]+|0x[0-9a-f]+)'
 RE_MNEMONIC = r'(hlt|in|out|puship|push|drop|dup|add|sub|inc|dec|not|nand|and|or|slt|shl|shr|swp|beq|jmp)'
-RE_INSTR = rf'{RE_MNEMONIC}(?:(?<=push) {RE_IMM}|(?<=beq|jmp)(?: {RE_ID})?|(?<!beq|jmp)(?<!push))'
-RE_LINE = rf'^(?:{RE_ID} ?: ?)?{RE_INSTR}$'
+RE_INSTR = rf'{RE_MNEMONIC}(?:(?<=push) {RE_IMMED}|(?<=beq|jmp)(?: {RE_LABEL})?|(?<!beq|jmp)(?<!push))'
+RE_LINE = rf'^(?:{RE_LABEL} ?: ?)?{RE_INSTR}$'
 RE_PATTERN = re.compile(RE_LINE, re.ASCII | re.IGNORECASE)
 
-OPCODES_LUT: dict[str, str] = {
-	'hlt':    '0000',
-	'in':     '0001',
-	'out':    '0010',
-	'puship': '0011',
-	'push':   '0100',
-	'drop':   '0101',
-	'dup':    '0110',
-	'swp':    '0111',
-	'add':    '1000',
-	'sub':    '1001',
-	'nand':   '1010',
-	'slt':    '1011',
-	'shl':    '1100',
-	'shr':    '1101',
-	'beq':    '1110',
-	'jmp':    '1111',
+"""
+Mapping of instruction mnemonics to encoded opcode.
+"""
+ENCODING_LUT: dict[str, int] = {
+	'hlt':    0x0,
+	'in':     0x1,
+	'out':    0x2,
+	'puship': 0x3,
+	'push':   0x4,
+	'drop':   0x5,
+	'dup':    0x6,
+	'swp':    0x7,
+	'add':    0x8,
+	'sub':    0x9,
+	'nand':   0xA,
+	'slt':    0xB,
+	'shl':    0xC,
+	'shr':    0xD,
+	'beq':    0xE,
+	'jmp':    0xF,
 }
 
-# Label must always be put on first instruction
+"""
+Mapping of pseudoinstructions to expanded sequence of native instructions.
+
+Each entry maps a pseudoinstruction mnemonic to an expansion function.
+The functions return a list of instructions, where each entry contains
+the fields label, opcode, argument, and target.
+
+The label must always be placed on the first instruction of the sequence.
+Some fields have placeholders that should be set in later assembly steps.
+"""
 PSEUDO_LUT = {
 	'inc': lambda labl, imm, tget: [
 		[labl, 'push', 1, None],
@@ -98,7 +110,7 @@ def imm2int(imm_s: str):
 
 
 def truncate_line(line: str):
-	"""Truncate a line to fit the terminal."""
+	"""Truncate a line to ensure it fits within the terminal window."""
 	max_width = min(80, shutil.get_terminal_size()[0])
 	line = line.lstrip().expandtabs(4)
 	if len(line) > max_width:
@@ -120,7 +132,7 @@ def tokenize(line: str):
 	return list(match.groups()) if match else None
 
 
-def parse(asm_file, label_lut: dict[str: int]):
+def parse(asm_file, symtab: dict[str, int]):
 	# [label, mnemonic, immediate, target]
 	pseudo_asm: list([str, str, int, str]) = []
 
@@ -147,12 +159,12 @@ def parse(asm_file, label_lut: dict[str: int]):
 
 		# Validate label
 		if label := tokens[0]:
-			if label in label_lut:
+			if label in symtab:
 				raise Exception(
 					f'{asm_file.name}:{lnum}: '
-					f'label already in use (first defined on line {label_lut[label]}).\n'
+					f'label already in use (first defined on line {symtab[label]}).\n'
 					f'{truncate_line(raw_line)}')
-			label_lut[label] = lnum  # Not the definitive value
+			symtab[label] = lnum  # Not the definitive value
 
 		# Validate immediate
 		tokens[2] = imm2int(tokens[2])
@@ -168,45 +180,46 @@ def parse(asm_file, label_lut: dict[str: int]):
 	# Validate symbolic targets
 	for lnum, tokens in enumerate(pseudo_asm, start=1):
 		target = tokens[3]
-		if target and target not in label_lut:
+		if target and target not in symtab:
 			raise Exception(
 				f'{asm_file.name}:{lnum}: undefined label "{target}".')
 
 	return pseudo_asm
 
 
-def expand_pseudo(pseudo_asm, label_lut: dict[str: int]):
+def expand_pseudo(pseudo_asm, symtab: dict[str, int]):
 	label_asm = []
-	instr_offset = 0  # Offset of an instruction after expansion
+	addr_offset = 0  # Address offset accumulated from expansions
 
 	for addr, tokens in enumerate(pseudo_asm):
-		label, mnemonic, imm, target = tokens
+		label, mnemonic, immed, target = tokens
 
-		# Update label
+		# Set definitive label address
 		if label:
-			label_lut[label] = addr + instr_offset
+			symtab[label] = addr + addr_offset
 
 		# Expand pseudoinstructions, leave the rest
 		# 'beq' and 'jmp' are pseudoinstructions iff symbolic targets are given
 		if (mnemonic in ('inc', 'dec', 'not', 'and', 'or')) or \
-		   (mnemonic == 'push' and imm > 15) or \
+		   (mnemonic == 'push' and immed > 15) or \
 		   (mnemonic == 'beq' and target) or \
 		   (mnemonic == 'jmp' and target):
-			transl = PSEUDO_LUT[mnemonic](label, imm, target)
-			# print(f'Translating:\n{tokens}\n{transl}\n')
-			label_asm.extend(transl)
-			instr_offset += len(transl) - 1  # minus the pseudoinstruction
+			# Pseudoinstructions
+			expanded = PSEUDO_LUT[mnemonic](label, immed, target)
+			label_asm.extend(expanded)
+			addr_offset += len(expanded) - 1  # Minus the one pseudoinstruction
 		else:
+			# Native instructions
 			label_asm.append(tokens)
 
 	return label_asm
 
 
-def resolve_targets(label_asm: list([str, str, int, str]), label_lut):
+def resolve_targets(label_asm: list([str, str, int, str]), symtab: dict[str, int]):
 	for addr, [_, _, _, target] in enumerate(label_asm):
 
 		if target:
-			target_addr = label_lut[target]
+			target_addr = symtab[target]
 			imm_nibble3 = 0xf & (target_addr >> 12)
 			imm_nibble2 = 0xf & (target_addr >> 8)
 			imm_nibble1 = 0xf & (target_addr >> 4)
@@ -221,39 +234,42 @@ def resolve_targets(label_asm: list([str, str, int, str]), label_lut):
 
 
 def gen_binary(bin_file, label_asm: list([str, str, int, str])):
-	for addr, [_, mnemonic, imm, _] in enumerate(label_asm):
-		opcode = OPCODES_LUT[mnemonic]
-		print(f'{opcode}{imm:04b}', file=bin_file)
+	for addr, [_, mnemonic, immed, _] in enumerate(label_asm):
+		opcode = ENCODING_LUT[mnemonic]
+		print(f'{opcode:04b}{immed:04b}', file=bin_file)
 
 
 def print_asm(label_asm):
 	# Print instruction records in table format
-	print('------------------------------------------')
-	print('ADDR  LABEL    MNEMONIC  IMMEDIATE  TARGET')
+	print('---------------------------------------------')
+	print('ADDRESS  LABEL    MNEMONIC  IMMEDIATE  TARGET')
+	print('---------------------------------------------')
+
 	for a, tokens in enumerate(label_asm):
-		l, m, i, t = ['-' if x is None else x for x in tokens]
-		print(f'{a:>4}  {l:<8} {m:<8}  {i:>2}  {i:04b}   {t:<8}')
-	print('------------------------------------------')
+		l, m, i, t = ('-' if x is None else x for x in tokens)
+		print(f'{a:>7}  {l:<8} {m:<8}  0x{i:1x}  {i:04b}  {t:<8}')
+
+	print('---------------------------------------------')
 
 
 def main():
 	input_fname  = sys.argv[1] if len(sys.argv) > 1 else 'firmware.asm'
 	output_fname = sys.argv[2] if len(sys.argv) > 2 else 'firmware.bin'
 
-	# Source analysis
+	symtab: dict[str, int] = {}  # (label -> address)
 
-	label_lut: dict[str: int] = {}  # (label -> address)
+	# Source analysis
 
 	try:
 		with open(input_fname, 'r') as asm_file:
-			pseudo_asm = parse(asm_file, label_lut)
+			pseudo_asm = parse(asm_file, symtab)
 	except Exception as e:
 		sys.exit(e)
 
-	# Pseudoinstruction translation and address resolution
+	# Pseudoinstruction expansion and address resolution
 
-	label_asm = expand_pseudo(pseudo_asm, label_lut)
-	resolve_targets(label_asm, label_lut)
+	label_asm = expand_pseudo(pseudo_asm, symtab)
+	resolve_targets(label_asm, symtab)
 	print_asm(label_asm)
 
 	# Binary generation
