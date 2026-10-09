@@ -216,17 +216,22 @@ def expand_pseudo(pseudo_asm, symtab: dict[str, int]):
 
 
 def resolve_targets(label_asm: list([str, str, int, str]), symtab: dict[str, int]):
-	for addr, [_, _, _, target] in enumerate(label_asm):
+	for addr, [_, mnemonic, _, target] in enumerate(label_asm):
 
 		if target:
 			target_addr = symtab[target]
+
+			if mnemonic == 'beq':
+				# Relative offsets are used instead of addresses
+				target_addr -= addr
+
 			imm_nibble3 = 0xf & (target_addr >> 12)
 			imm_nibble2 = 0xf & (target_addr >> 8)
 			imm_nibble1 = 0xf & (target_addr >> 4)
 			imm_nibble0 = 0xf & target_addr
 
-			# Update immediates in corresponding push instructions
-			# Indices work for 'beq' and 'jmp'; currently, only these set targets
+			# Update immediates in the related data-loading instructions
+			# Indices work for 'beq' and 'jmp', as only these set targets
 			label_asm[addr-9][2] = imm_nibble3
 			label_asm[addr-7][2] = imm_nibble2
 			label_asm[addr-4][2] = imm_nibble1
