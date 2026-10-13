@@ -2,7 +2,7 @@
 
 	in		; size of array
 
-loop:	dup
+loop:	dup 0
 	push 0
 	beq end		; zero marks end of input
 

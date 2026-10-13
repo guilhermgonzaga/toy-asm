@@ -3,14 +3,14 @@
 ; No other byte may be zero. General format: "xx..xx0xx..xx0".
 
 loop1:	in		; get char
-	dup
+	dup 0
 	push 0
 	beq loop2	; byte 0 marks half of input
 
 	jmp loop1	; continue loop
 
 loop2:	in		; get char
-	dup
+	dup 0
 	push 0
 	beq valid	; byte 0 marks end of input
 

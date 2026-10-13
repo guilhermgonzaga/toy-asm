@@ -2,17 +2,17 @@
 ; End on null byte.
 
 L1:	in		; get char
-	dup
+	dup 0
 	push 0
 	beq end		; null byte is end of input
 
-	dup		; test char < 'A'
+	dup 0		; test char < 'A'
 	push 65
 	slt
 	push 1
 	beq L1		; skip if so
 
-	dup		; test if char < '['
+	dup 0		; test if char < '['
 	push 91
 	slt
 	push 0

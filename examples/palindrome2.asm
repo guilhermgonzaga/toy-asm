@@ -7,7 +7,7 @@
 	in		; get input size
 	shr		; halve size
 
-loop1:	dup
+loop1:	dup 0
 	push 0
 	beq brk1	; jump if half of input consumed
 	dec		; decrement size
@@ -17,9 +17,9 @@ loop1:	dup
 
 	jmp loop1	; continue loop
 
-brk1:	drop		; discard zero
+brk1:	drop 1		; discard zero
 
-loop2:	dup
+loop2:	dup 0
 	push 0
 	beq valid	; jump if stack is empty
 

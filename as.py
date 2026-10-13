@@ -8,33 +8,42 @@ import shutil
 import sys
 
 # Regex patterns used for parsing
-RE_LABEL = r'([_a-z][_a-z0-9]*)'
 RE_IMMED = r'(-?[0-9]+|0x[0-9a-f]+)'
-RE_MNEMONIC = r'(hlt|in|out|puship|push|drop|dup|add|sub|inc|dec|not|nand|and|or|slt|shl|shr|swp|beq|jmp)'
-RE_INSTR = rf'{RE_MNEMONIC}(?:(?<=push) {RE_IMMED}|(?<=beq|jmp)(?: {RE_LABEL})?|(?<!beq|jmp)(?<!push))'
+RE_LABEL = r'([_a-z][_a-z0-9]*)'
+RE_MNEM_IMMED = r'(push|addui|drop|dup)'
+RE_MNEM_LABEL = r'(beq|jmp|jal)'
+RE_MNEM_PLAIN = r'(hlt|puship|in|out|swp|nand|not|and|or|inc|dec|add|sub|slt|sltu|shl|shr|beq|jmp|jal|ret)'
+RE_INSTR = rf'(?:{RE_MNEM_IMMED} {RE_IMMED}|{RE_MNEM_LABEL} {RE_LABEL}|{RE_MNEM_PLAIN})'
 RE_LINE = rf'^(?:{RE_LABEL} ?: ?)?{RE_INSTR}$'
 RE_PATTERN = re.compile(RE_LINE, re.ASCII | re.IGNORECASE)
 
 """
-Mapping of instruction mnemonics to encoded opcode.
+Mapping of instruction mnemonics to encoded fields (opcode and opext).
+Opext is defined only for instructions of the extended format.
 """
-ENCODING_LUT: dict[str, int] = {
-	'hlt':    0x0,
-	'in':     0x1,
-	'out':    0x2,
-	'puship': 0x3,
-	'push':   0x4,
-	'drop':   0x5,
-	'dup':    0x6,
-	'swp':    0x7,
-	'add':    0x8,
-	'sub':    0x9,
-	'nand':   0xA,
-	'slt':    0xB,
-	'shl':    0xC,
-	'shr':    0xD,
-	'beq':    0xE,
-	'jmp':    0xF,
+ENCODING_LUT: dict[str, tuple[int, int|None]] = {
+	# Extended format
+	'hlt':    (0x0, 0x0),
+	'puship': (0x0, 0x1),
+	'in':     (0x0, 0x2),
+	'out':    (0x0, 0x3),
+	'swp':    (0x0, 0x4),
+	'nand':   (0x0, 0x5),
+	'add':    (0x0, 0x6),
+	'sub':    (0x0, 0x7),
+	'slt':    (0x0, 0x8),
+	'sltu':   (0x0, 0x9),
+	'shl':    (0x0, 0xA),
+	'shr':    (0x0, 0xB),
+	'beq':    (0x0, 0xC),
+	'jmp':    (0x0, 0xD),
+	'jal':    (0x0, 0xE),
+	'ret':    (0x0, 0xF),
+	# Immediate format
+	'push':   (0x8, None),
+	'addui':  (0x9, None),
+	'drop':   (0xA, None),
+	'dup':    (0xB, None),
 }
 
 """
@@ -75,22 +84,30 @@ PSEUDO_LUT = {
 		[None, 'nand', 0, None]
 	],
 	'push': lambda labl, imm, tget: [
-		[labl, 'push', 4,      None],
-		[None, 'push', imm>>4, None],  # Upper nibble
-		[None, 'shl',  0,      None],
-		[None, 'push', imm&15, None],  # Lower nibble
-		[None, 'add',  0,      None]
+		[labl, 'push',  imm&15, None],  # Lower nibble
+		[None, 'addui', imm>>4, None]   # Upper nibble
 	],
-	'beq': lambda labl, imm, tget:
-		PSEUDO_LUT['push'](labl, 0, None) +  # Placeholder immediate (upper byte)
-		PSEUDO_LUT['push'](None, 0, None) +  # Placeholder immediate (lower byte)
-		[[None, 'beq',  0, tget]]            # Keep target to resolve later
-	,
-	'jmp': lambda labl, imm, tget:
-		PSEUDO_LUT['push'](labl, 0, None) +  # Placeholder immediate (upper byte)
-		PSEUDO_LUT['push'](None, 0, None) +  # Placeholder immediate (lower byte)
-		[[None, 'jmp',  0, tget]]            # Keep target to resolve later
-	,
+	'beq': lambda labl, imm, tget: [
+		[labl, 'push',  0, None],  # Placeholder for upper byte of target
+		[None, 'addui', 0, None],  # Placeholder for upper byte of target
+		[None, 'push',  0, None],  # Placeholder for lower byte of target
+		[None, 'addui', 0, None],  # Placeholder for lower byte of target
+		[None, 'beq',   0, tget]   # Keep target to resolve later
+	],
+	'jmp': lambda labl, imm, tget: [
+		[labl, 'push',  0, None],  # Placeholder for upper byte of target
+		[None, 'addui', 0, None],  # Placeholder for upper byte of target
+		[None, 'push',  0, None],  # Placeholder for lower byte of target
+		[None, 'addui', 0, None],  # Placeholder for lower byte of target
+		[None, 'jmp',   0, tget]   # Keep target to resolve later
+	],
+	'jal': lambda labl, imm, tget: [
+		[labl, 'push',  0, None],  # Placeholder for upper byte of target
+		[None, 'addui', 0, None],  # Placeholder for upper byte of target
+		[None, 'push',  0, None],  # Placeholder for lower byte of target
+		[None, 'addui', 0, None],  # Placeholder for lower byte of target
+		[None, 'jal',   0, tget]   # Keep target to resolve later
+	],
 }
 
 
@@ -127,9 +144,19 @@ def reconstruct_line(line: str):
 def tokenize(line: str):
 	# Tokenize with regex
 	match = re.fullmatch(RE_PATTERN, line)
+	if match is None:
+		return None
+
+	# [label, mnemonic_immed, immediate, mnemonic_label, target, mnemonic_plain]
+	groups = list(match.groups())
+
+	# Concentrate mnemonics, discard unused places
+	groups[1] = groups[1] or groups[3] or groups[5]  # Two out of three are None
+	groups.pop(5)
+	groups.pop(3)
 
 	# [label, mnemonic, immediate, target]
-	return list(match.groups()) if match else None
+	return groups
 
 
 def parse(asm_file, symtab: dict[str, int]):
@@ -193,17 +220,15 @@ def expand_pseudo(pseudo_asm, symtab: dict[str, int]):
 
 	for addr, tokens in enumerate(pseudo_asm):
 		label, mnemonic, immed, target = tokens
+		mnemonic = mnemonic.casefold()  # Case-insensitive
 
 		# Set definitive label address
 		if label:
 			symtab[label] = addr + addr_offset
 
 		# Expand pseudoinstructions, leave the rest
-		# 'beq' and 'jmp' are pseudoinstructions iff symbolic targets are given
-		if (mnemonic in ('inc', 'dec', 'not', 'and', 'or')) or \
-		   (mnemonic == 'push' and immed > 15) or \
-		   (mnemonic == 'beq' and target) or \
-		   (mnemonic == 'jmp' and target):
+		# 'beq', 'jmp', 'jal' are pseudoinstructions iff symbolic targets are given
+		if mnemonic not in ENCODING_LUT or immed > 15 or target:
 			# Pseudoinstructions
 			expanded = PSEUDO_LUT[mnemonic](label, immed, target)
 			label_asm.extend(expanded)
@@ -231,17 +256,18 @@ def resolve_targets(label_asm: list([str, str, int, str]), symtab: dict[str, int
 			imm_nibble0 = 0xf & target_addr
 
 			# Update immediates in the related data-loading instructions
-			# Indices work for 'beq' and 'jmp', as only these set targets
-			label_asm[addr-9][2] = imm_nibble3
-			label_asm[addr-7][2] = imm_nibble2
-			label_asm[addr-4][2] = imm_nibble1
+			# Indices work for 'beq', 'jmp' and 'jal', as only these set targets
+			label_asm[addr-4][2] = imm_nibble2
+			label_asm[addr-3][2] = imm_nibble3
 			label_asm[addr-2][2] = imm_nibble0
+			label_asm[addr-1][2] = imm_nibble1
 
 
 def gen_binary(bin_file, label_asm: list([str, str, int, str])):
 	for addr, [_, mnemonic, immed, _] in enumerate(label_asm):
-		opcode = ENCODING_LUT[mnemonic]
-		print(f'{opcode:04b}{immed:04b}', file=bin_file)
+		opcode, opext = ENCODING_LUT[mnemonic]
+		other = immed if opext is None else opext
+		print(f'{opcode:04b}{other:04b}', file=bin_file)
 
 
 def print_asm(label_asm):
