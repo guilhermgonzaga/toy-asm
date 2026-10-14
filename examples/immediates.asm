@@ -1,11 +1,6 @@
 ; Test how immediate width mandates different representations.
 
-	push -128
-	push -9
-	push -8
-	push -1
-	push 0
-	push 1
-	push 15
-	push 16
-	push 255
+	push 0x00
+	push 0x0F
+	push 0xF0
+	push 0xFF

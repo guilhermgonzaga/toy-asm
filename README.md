@@ -16,7 +16,7 @@ A toy assembler for a toy architecture.
 label ":" mnemonic [immediate|target] ";" comment
 ```
 
-The immediate may be a signed decimal or an unsigned hexadecimal pattern preceded by `0x`. The only restriction is that it fits into 8 bits.
+The immediate may be a signed decimal or an unsigned hexadecimal pattern preceded by `0x`. For native instructions, the immediate must fit within 4 bits. For PUSH, immediate values can be up to 8 bits wide.
 
 Labels and targets are translated to 16-bit addresses and placed in code during pseudoinstruction expansion. Currently, a label cannot be placed on a line without an instruction.
 

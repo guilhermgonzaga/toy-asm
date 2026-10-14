@@ -58,72 +58,69 @@ Some fields have placeholders that should be set in later assembly steps.
 """
 PSEUDO_LUT = {
 	'inc': lambda labl, imm, tget: [
-		[labl, 'push', 1, None],
-		[None, 'add',  0, None]
+		[labl, 'push', 1,    None],
+		[None, 'add',  None, None]
 	],
 	'dec': lambda labl, imm, tget: [
-		[labl, 'push', 1, None],
-		[None, 'swp',  0, None],
-		[None, 'sub',  0, None]
+		[labl, 'push', 1,    None],
+		[None, 'swp',  None, None],
+		[None, 'sub',  None, None]
 	],
 	'not': lambda labl, imm, tget: [
-		[labl, 'dup',  0, None],
-		[None, 'nand', 0, None]
+		[labl, 'dup',  0,    None],
+		[None, 'nand', None, None]
 	],
 	'and': lambda labl, imm, tget: [
-		[labl, 'nand', 0, None],
-		[None, 'dup',  0, None],
-		[None, 'nand', 0, None]
+		[labl, 'nand', None, None],
+		[None, 'dup',  0,    None],
+		[None, 'nand', None, None]
 	],
 	'or': lambda labl, imm, tget: [
-		[labl, 'dup',  0, None],
-		[None, 'nand', 0, None],
-		[None, 'swp',  0, None],
-		[None, 'dup',  0, None],
-		[None, 'nand', 0, None],
-		[None, 'nand', 0, None]
+		[labl, 'dup',  0,    None],
+		[None, 'nand', None, None],
+		[None, 'swp',  None, None],
+		[None, 'dup',  0,    None],
+		[None, 'nand', None, None],
+		[None, 'nand', None, None]
 	],
 	'push': lambda labl, imm, tget: [
 		[labl, 'push',  imm&15, None],  # Lower nibble
 		[None, 'addui', imm>>4, None]   # Upper nibble
+	] if imm>>4 != 0 else [
+		[labl, 'push',  imm,    None],  # Just a nibble
 	],
 	'beq': lambda labl, imm, tget: [
-		[labl, 'push',  0, None],  # Placeholder for upper byte of target
-		[None, 'addui', 0, None],  # Placeholder for upper byte of target
-		[None, 'push',  0, None],  # Placeholder for lower byte of target
-		[None, 'addui', 0, None],  # Placeholder for lower byte of target
-		[None, 'beq',   0, tget]   # Keep target to resolve later
+		[labl, 'push',  0,    None],  # Placeholder for upper byte of target
+		[None, 'addui', 0,    None],  # Placeholder for upper byte of target
+		[None, 'push',  0,    None],  # Placeholder for lower byte of target
+		[None, 'addui', 0,    None],  # Placeholder for lower byte of target
+		[None, 'beq',   None, tget]   # Keep target to resolve later
 	],
 	'jmp': lambda labl, imm, tget: [
-		[labl, 'push',  0, None],  # Placeholder for upper byte of target
-		[None, 'addui', 0, None],  # Placeholder for upper byte of target
-		[None, 'push',  0, None],  # Placeholder for lower byte of target
-		[None, 'addui', 0, None],  # Placeholder for lower byte of target
-		[None, 'jmp',   0, tget]   # Keep target to resolve later
+		[labl, 'push',  0,    None],  # Placeholder for upper byte of target
+		[None, 'addui', 0,    None],  # Placeholder for upper byte of target
+		[None, 'push',  0,    None],  # Placeholder for lower byte of target
+		[None, 'addui', 0,    None],  # Placeholder for lower byte of target
+		[None, 'jmp',   None, tget]   # Keep target to resolve later
 	],
 	'jal': lambda labl, imm, tget: [
-		[labl, 'push',  0, None],  # Placeholder for upper byte of target
-		[None, 'addui', 0, None],  # Placeholder for upper byte of target
-		[None, 'push',  0, None],  # Placeholder for lower byte of target
-		[None, 'addui', 0, None],  # Placeholder for lower byte of target
-		[None, 'jal',   0, tget]   # Keep target to resolve later
+		[labl, 'push',  0,    None],  # Placeholder for upper byte of target
+		[None, 'addui', 0,    None],  # Placeholder for upper byte of target
+		[None, 'push',  0,    None],  # Placeholder for lower byte of target
+		[None, 'addui', 0,    None],  # Placeholder for lower byte of target
+		[None, 'jal',   None, tget]   # Keep target to resolve later
 	],
 }
 
 
 def imm2int(imm_s: str):
 	if imm_s is None:
-		return 0
-
-	# Accept hex and decimal
-	imm_i = int(imm_s, 16) if '0x' in imm_s else int(imm_s)
-
-	# Validate range
-	if not -128 <= imm_i <= 255:
 		return None
 
-	# Reset sign bits
-	return imm_i & 0xff
+	if '0x' in imm_s:  # Unsigned hexadecimal literal
+		return int(imm_s, 16)
+
+	return int(imm_s)  # Signed decimal literal
 
 
 def truncate_line(line: str):
@@ -193,12 +190,23 @@ def parse(asm_file, symtab: dict[str, int]):
 					f'{truncate_line(raw_line)}')
 			symtab[label] = lnum  # Not the definitive value
 
-		# Validate immediate
+		# Parse immediate
 		tokens[2] = imm2int(tokens[2])
-		if tokens[2] is None:
-			raise Exception(
-				f'{asm_file.name}:{lnum}: immediate does not fit in 8 bits.\n'
-				f'{truncate_line(raw_line)}')
+
+		# Validate immediate
+		if immediate := tokens[2]:
+			if tokens[1].casefold() == 'push':
+				lowerbound, upperbound, width = -128, 255, 8
+			else:
+				lowerbound, upperbound, width = -8, 15, 4
+			# Immediate must fit within range
+			if not lowerbound <= immediate <= upperbound:
+				raise Exception(
+					f'{asm_file.name}:{lnum}: immediate for "{tokens[1]}" exceeds {width}-bit width.\n'
+					f'{truncate_line(raw_line)}')
+			# Reinterpret value as unsigned
+			immediate &= (1 << width) - 1
+			tokens[2] = immediate
 
 		pseudo_asm.append(tokens)
 
@@ -228,7 +236,7 @@ def expand_pseudo(pseudo_asm, symtab: dict[str, int]):
 
 		# Expand pseudoinstructions, leave the rest
 		# 'beq', 'jmp', 'jal' are pseudoinstructions iff symbolic targets are given
-		if mnemonic not in ENCODING_LUT or immed > 15 or target:
+		if mnemonic not in ENCODING_LUT or mnemonic == 'push' or target:
 			# Pseudoinstructions
 			expanded = PSEUDO_LUT[mnemonic](label, immed, target)
 			label_asm.extend(expanded)
@@ -277,8 +285,10 @@ def print_asm(label_asm):
 	print('---------------------------------------------')
 
 	for a, tokens in enumerate(label_asm):
-		l, m, i, t = ('-' if x is None else x for x in tokens)
-		print(f'{a:>7}  {l:<8} {m:<8}  0x{i:1x}  {i:04b}  {t:<8}')
+		l, m, i, t = tokens
+		l, m, t = ('-' if x is None else x for x in (l, m, t))
+		i = '-    -' if i is None else f'0x{i:1x}  {i:04b}'  # Special case
+		print(f'{a:>7}  {l:<8} {m:<8}  {i:<9}  {t:<8}')
 
 	print('---------------------------------------------')
 
