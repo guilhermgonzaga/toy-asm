@@ -16,7 +16,7 @@ A toy assembler for a toy architecture.
 label ":" mnemonic [immediate|target] ";" comment
 ```
 
-The immediate may be a signed decimal or an unsigned hexadecimal pattern preceded by `0x`. For native instructions, the immediate must fit within 4 bits. For PUSH, immediate values can be up to 8 bits wide.
+The immediate may be a signed decimal or an unsigned hexadecimal pattern preceded by `0x`. For native instructions, the immediate must fit within 4 bits.
 
 Labels and targets are translated to 16-bit addresses and placed in code during pseudoinstruction expansion. Currently, a label cannot be placed on a line without an instruction.
 
@@ -102,6 +102,8 @@ Native instructions and their encodings.
 
 - **DUP (_duplicate_)**: Copy one of the 4 topmost bytes on the data stack and push it on top. The immediate indicates which one as a value to be subtracted from SP. Hence, only the two lowest bits are relevant.
 
+Syntactic sugar was added for BEQ, JMP, and JAL: labels may be used as branch targets.
+
 #### Pseudoinstructions
 
 - **INC (_increment_)**: Increment the topmost byte on the data stack.
@@ -114,8 +116,4 @@ Native instructions and their encodings.
 
 - **OR**: Bitwise OR the two topmost bytes on the data stack.
 
-For some native instructions, syntactic sugar was added:
-
-- Ability to use labels as branch targets with JMP, BEQ, or JAL.
-
-- Ability to PUSH values up to 8 bits wide to the data stack transparently; the assembler substitutes in a longer sequence of instructions if needed.
+- **PUSHB (_push byte_)**: Push immediate values up to 8 bits wide transparently; the assembler substitutes in a longer sequence of instructions if needed.

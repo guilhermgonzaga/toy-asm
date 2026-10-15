@@ -7,18 +7,18 @@ L1:	in		; get char
 	beq end		; null byte is end of input
 
 	dup 0		; test char < 'a'
-	push 97
+	pushb 97
 	slt
 	push 1
 	beq L1		; skip if so
 
 	dup 0		; test if char < '{'
-	push 123
+	pushb 123
 	slt
 	push 0
 	beq L1		; skip if not
 
-	push 0xDF	; convert char to upper case
+	pushb 0xDF	; convert char to upper case
 	and
 	out
 

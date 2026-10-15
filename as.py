@@ -10,7 +10,7 @@ import sys
 # Regex patterns used for parsing
 RE_IMMED = r'(-?[0-9]+|0x[0-9a-f]+)'
 RE_LABEL = r'([_a-z][_a-z0-9]*)'
-RE_MNEM_IMMED = r'(push|addui|drop|dup)'
+RE_MNEM_IMMED = r'(pushb|push|addui|drop|dup)'
 RE_MNEM_LABEL = r'(beq|jmp|jal)'
 RE_MNEM_PLAIN = r'(hlt|puship|in|out|swp|nand|not|and|or|inc|dec|add|sub|slt|sltu|shl|shr|beq|jmp|jal|ret)'
 RE_INSTR = rf'(?:{RE_MNEM_IMMED} {RE_IMMED}|{RE_MNEM_LABEL} {RE_LABEL}|{RE_MNEM_PLAIN})'
@@ -83,7 +83,7 @@ PSEUDO_LUT = {
 		[None, 'nand', None, None],
 		[None, 'nand', None, None]
 	],
-	'push': lambda labl, imm, tget: [
+	'pushb': lambda labl, imm, tget: [
 		[labl, 'push',  imm&15, None],  # Lower nibble
 		[None, 'addui', imm>>4, None]   # Upper nibble
 	] if imm>>4 != 0 else [
@@ -195,7 +195,7 @@ def parse(asm_file, symtab: dict[str, int]):
 
 		# Validate immediate
 		if immediate := tokens[2]:
-			if tokens[1].casefold() == 'push':
+			if tokens[1].casefold() == 'pushb':
 				lowerbound, upperbound, width = -128, 255, 8
 			else:
 				lowerbound, upperbound, width = -8, 15, 4
@@ -236,7 +236,7 @@ def expand_pseudo(pseudo_asm, symtab: dict[str, int]):
 
 		# Expand pseudoinstructions, leave the rest
 		# 'beq', 'jmp', 'jal' are pseudoinstructions iff symbolic targets are given
-		if mnemonic not in ENCODING_LUT or mnemonic == 'push' or target:
+		if mnemonic not in ENCODING_LUT or target:
 			# Pseudoinstructions
 			expanded = PSEUDO_LUT[mnemonic](label, immed, target)
 			label_asm.extend(expanded)

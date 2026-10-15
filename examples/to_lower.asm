@@ -7,19 +7,19 @@ L1:	in		; get char
 	beq end		; null byte is end of input
 
 	dup 0		; test char < 'A'
-	push 65
+	pushb 65
 	slt
 	push 1
 	beq L1		; skip if so
 
 	dup 0		; test if char < '['
-	push 91
+	pushb 91
 	slt
 	push 0
 	beq L1		; skip if not
 
 	not		; convert char to lower case
-	push 0xDF
+	pushb 0xDF
 	nand
 	out
 
