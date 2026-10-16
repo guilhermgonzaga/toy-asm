@@ -12,7 +12,8 @@ RE_IMMED = r'(-?[0-9]+|0x[0-9a-f]+)'
 RE_LABEL = r'([_a-z][_a-z0-9]*)'
 RE_MNEM_IMMED = r'(pushb|push|addui|drop|dup)'
 RE_MNEM_LABEL = r'(beq|jmp|jal)'
-RE_MNEM_PLAIN = r'(hlt|puship|in|out|swp|nand|not|and|or|inc|dec|add|sub|slt|sltu|shl|shr|beq|jmp|jal|ret)'
+RE_MNEM_PLAIN = r'(hlt|puship|in|out|swp|nand|add|sub|slt|sltu|shl|shr|beq|jmp|jal|ret' \
+                r'|nop|inc|dec|neg|sgt|sgtu|not|and|or|nor|xor)'
 RE_INSTR = rf'(?:{RE_MNEM_IMMED} {RE_IMMED}|{RE_MNEM_LABEL} {RE_LABEL}|{RE_MNEM_PLAIN})'
 RE_LINE = rf'^(?:{RE_LABEL} ?: ?)?{RE_INSTR}$'
 RE_PATTERN = re.compile(RE_LINE, re.ASCII | re.IGNORECASE)
@@ -57,23 +58,40 @@ The label must always be placed on the first instruction of the sequence.
 Some fields have placeholders that should be set in later assembly steps.
 """
 PSEUDO_LUT = {
+	'nop': lambda labl, imm, tget: [
+		[labl, 'drop', 0,    None],
+	],
 	'inc': lambda labl, imm, tget: [
 		[labl, 'push', 1,    None],
-		[None, 'add',  None, None]
+		[None, 'add',  None, None],
 	],
 	'dec': lambda labl, imm, tget: [
 		[labl, 'push', 1,    None],
 		[None, 'swp',  None, None],
-		[None, 'sub',  None, None]
+		[None, 'sub',  None, None],
+	],
+	'neg': lambda labl, imm, tget: [
+		[labl, 'dup',  0,    None],
+		[None, 'nand', None, None],
+		[None, 'push', 1,    None],
+		[None, 'add',  None, None],
+	],
+	'sgt': lambda labl, imm, tget: [
+		[labl, 'swp',  None, None],
+		[None, 'slt',  None, None],
+	],
+	'sgtu': lambda labl, imm, tget: [
+		[labl, 'swp',  None, None],
+		[None, 'sltu', None, None],
 	],
 	'not': lambda labl, imm, tget: [
 		[labl, 'dup',  0,    None],
-		[None, 'nand', None, None]
+		[None, 'nand', None, None],
 	],
 	'and': lambda labl, imm, tget: [
 		[labl, 'nand', None, None],
 		[None, 'dup',  0,    None],
-		[None, 'nand', None, None]
+		[None, 'nand', None, None],
 	],
 	'or': lambda labl, imm, tget: [
 		[labl, 'dup',  0,    None],
@@ -81,7 +99,32 @@ PSEUDO_LUT = {
 		[None, 'swp',  None, None],
 		[None, 'dup',  0,    None],
 		[None, 'nand', None, None],
-		[None, 'nand', None, None]
+		[None, 'nand', None, None],
+	],
+	'nor': lambda labl, imm, tget: [
+		[labl, 'dup',  0,    None],
+		[None, 'nand', None, None],
+		[None, 'swp',  None, None],
+		[None, 'dup',  0,    None],
+		[None, 'nand', None, None],
+		[None, 'nand', None, None],
+		[None, 'dup',  0,    None],
+		[None, 'nand', None, None],
+	],
+	'xor': lambda labl, imm, tget: [
+		[labl, 'dup',  1,    None],
+		[None, 'dup',  0,    None],
+		[None, 'nand', None, None],
+		[None, 'dup',  1,    None],
+		[None, 'nand', None, None],
+		[None, 'swp',  None, None],
+		[None, 'dup',  0,    None],
+		[None, 'nand', None, None],
+		[None, 'dup',  2,    None],
+		[None, 'nand', None, None],
+		[None, 'nand', None, None],
+		[None, 'swp',  None, None],
+		[None, 'drop',  1,   None],
 	],
 	'pushb': lambda labl, imm, tget: [
 		[labl, 'push',  imm&15, None],  # Lower nibble
@@ -94,21 +137,21 @@ PSEUDO_LUT = {
 		[None, 'addui', 0,    None],  # Placeholder for upper byte of target
 		[None, 'push',  0,    None],  # Placeholder for lower byte of target
 		[None, 'addui', 0,    None],  # Placeholder for lower byte of target
-		[None, 'beq',   None, tget]   # Keep target to resolve later
+		[None, 'beq',   None, tget],  # Keep target to resolve later
 	],
 	'jmp': lambda labl, imm, tget: [
 		[labl, 'push',  0,    None],  # Placeholder for upper byte of target
 		[None, 'addui', 0,    None],  # Placeholder for upper byte of target
 		[None, 'push',  0,    None],  # Placeholder for lower byte of target
 		[None, 'addui', 0,    None],  # Placeholder for lower byte of target
-		[None, 'jmp',   None, tget]   # Keep target to resolve later
+		[None, 'jmp',   None, tget],  # Keep target to resolve later
 	],
 	'jal': lambda labl, imm, tget: [
 		[labl, 'push',  0,    None],  # Placeholder for upper byte of target
 		[None, 'addui', 0,    None],  # Placeholder for upper byte of target
 		[None, 'push',  0,    None],  # Placeholder for lower byte of target
 		[None, 'addui', 0,    None],  # Placeholder for lower byte of target
-		[None, 'jal',   None, tget]   # Keep target to resolve later
+		[None, 'jal',   None, tget],  # Keep target to resolve later
 	],
 }
 

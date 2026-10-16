@@ -58,7 +58,7 @@ Native instructions and their encodings.
 |DROP    |immediate|`1010iiii`|
 |DUP     |immediate|`1011iiii`|
 
-### Description of the Instructions
+### Description of the Instructions' Behavior
 
 #### Native instructions
 
@@ -68,25 +68,25 @@ Native instructions and their encodings.
 
 - **IN**: Push a byte to the data stack received from the IO device.
 
-- **OUT**: Pop a byte to the data stack and send it to the IO device.
+- **OUT**: Pop a byte from the data stack and send it to the IO device.
 
 - **SWP (_swap_)**: Swap the two topmost bytes on the stack.
 
-- **NAND**: Pop two bytes on the data stack, bitwise nand them, and push the resulting byte.
+- **NAND**: Pop two bytes from the data stack, bitwise nand them, and push the resulting byte.
 
-- **ADD**: Pop two bytes on the data stack, add them, and push the resulting byte.
+- **ADD**: Pop two bytes from the data stack, add them, and push the resulting byte.
 
-- **SUB (_subtract_)**: Pop two bytes on the data stack, subtract them, and push the resulting byte.
+- **SUB (_subtract_)**: Pop two bytes from the data stack, subtract them, and push the resulting byte.
 
-- **SLT (_set if less than_)**: Pop two bytes on the data stack, and push a byte 1 if the topmost is smaller, 0 otherwise. Example: "-1 < 1" is 1 (true).
+- **SLT (_set if less than_)**: Pop two bytes from the data stack, and push a byte 1 if the topmost is smaller, 0 otherwise. Example: "-1 < 1" is 1 (true).
 
 - **SLTU (_set if less than, unsigned_)**: Same as SLT, except the comparison takes operands as unsigned. Example: "-1 < 1" is 0 (false).
 
-- **SHL (_shift left_)**: Pop two bytes on the data stack, and push the topmost shifted left by the next one.
+- **SHL (_shift left_)**: Pop two bytes from the data stack, and push the topmost shifted left by the next one.
 
-- **SHR (_shift right_)**: Pop two bytes on the data stack, and push the topmost shifted right by the next one.
+- **SHR (_shift right_)**: Pop two bytes from the data stack, and push the topmost shifted right by the next one.
 
-- **BEQ (_branch if equal_)**: Pop 4 bytes on the data stack and, if the lower ones are equal, assign the address made up of the topmost bytes to IP.
+- **BEQ (_branch if equal_)**: Pop 4 bytes from the data stack and, if the lower ones are equal, assign the address made up of the topmost bytes to IP.
 
 - **JMP (_jump_)**: Pop an address from the data stack and assign it to IP.
 
@@ -106,14 +106,26 @@ Syntactic sugar was added for BEQ, JMP, and JAL: labels may be used as branch ta
 
 #### Pseudoinstructions
 
+- **NOP (_no operation_)**: Do nothing until the next instruction.
+
 - **INC (_increment_)**: Increment the topmost byte on the data stack.
 
 - **DEC (_decrement_)**: Decrement the topmost byte on the data stack.
 
-- **NOT**: Bitwise negate the topmost byte on the data stack.
+- **NEG (_negate_)**: Pop a byte from the data stack and push it's opposite (two's complement).
 
-- **AND**: Bitwise AND the two topmost bytes on the data stack.
+- **SGT (_set if greater than_)**: Pop two bytes from the data stack, and push a byte 1 if the topmost is smaller, 0 otherwise. Example: "-1 > 1" is 0 (false).
 
-- **OR**: Bitwise OR the two topmost bytes on the data stack.
+- **SGTU (_set if greater than, unsigned_)**: Same as SLT, except the comparison takes operands as unsigned. Example: "-1 > 1" is 1 (true).
+
+- **NOT**: Pop a byte from the data stack, bitwise NOT it, and push the result.
+
+- **AND**: Pop two bytes from the data stack, bitwise AND them, and push the result.
+
+- **OR**: Pop two bytes from the data stack, bitwise OR them, and push the result.
+
+- **NOR**: Pop two bytes from the data stack, bitwise NOR them, and push the result.
+
+- **XOR**: Pop two bytes from the data stack, bitwise XOR them, and push the result.
 
 - **PUSHB (_push byte_)**: Push immediate values up to 8 bits wide transparently; the assembler substitutes in a longer sequence of instructions if needed.
