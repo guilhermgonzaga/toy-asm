@@ -20,6 +20,14 @@ The immediate may be a signed decimal or an unsigned hexadecimal pattern precede
 
 Labels and targets are translated to 16-bit addresses and placed in code during pseudoinstruction expansion. Currently, a label cannot be placed on a line without an instruction.
 
+### Usage
+
+A description of all options is shown by `-h` or `--help`.
+
+There are command line options for source and output file names. The source file name is a required positional parameter, while the output file name is optional and defaults to 'firmware.bin'.
+
+There is also a `verbose` flag which shows a table containing an abstract representation of the code just before binary generation, so that users can inspect the results of the pseudo instruction expansion and symbolic target resolution.
+
 ## Instruction-set Architecture
 
 The ISA is designed for the model of a stack machine with two stacks:

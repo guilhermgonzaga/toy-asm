@@ -3,6 +3,7 @@
 Assembler for a simple stack-based architecture.
 """
 
+import argparse
 import re
 import shutil
 import sys
@@ -343,15 +344,21 @@ def main():
 	except (AttributeError, OSError, TypeError):
 		pass
 
-	input_fname  = sys.argv[1] if len(sys.argv) > 1 else 'firmware.asm'
-	output_fname = sys.argv[2] if len(sys.argv) > 2 else 'firmware.bin'
+	ap = argparse.ArgumentParser(
+		description='Assemble programs for the MISC architecture.',
+		allow_abbrev=False,
+	)
+	ap.add_argument('asmfile', help='the source file name')
+	ap.add_argument('-v', '--verbose', help='show extra information', action='store_true')
+	ap.add_argument('-o', '--output', help='the output file name; default is "firmware.bin"', default='firmware.bin')
+	args = ap.parse_args()
 
 	symtab: dict[str, int] = {}  # (label -> address)
 
 	# Source analysis
 
 	try:
-		with open(input_fname, 'r') as asm_file:
+		with open(args.asmfile, 'r') as asm_file:
 			pseudo_asm = parse(asm_file, symtab)
 	except Exception as e:
 		sys.exit(e)
@@ -360,12 +367,13 @@ def main():
 
 	label_asm = expand_pseudo(pseudo_asm, symtab)
 	resolve_targets(label_asm, symtab)
-	print_asm(label_asm)
+	if args.verbose:
+		print_asm(label_asm)
 
 	# Binary generation
 
 	try:
-		with open(output_fname, 'w', encoding='ascii', newline='\n') as bin_file:
+		with open(args.output, 'w', encoding='ascii', newline='\n') as bin_file:
 			gen_binary(bin_file, label_asm)
 	except Exception as e:
 		sys.exit(e)
