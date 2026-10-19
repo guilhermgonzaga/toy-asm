@@ -337,6 +337,12 @@ def print_asm(label_asm):
 
 
 def main():
+	try:
+		# Ensure error messages are not lost due to buffering
+		sys.stderr.reconfigure(write_through=True)
+	except (AttributeError, OSError, TypeError):
+		pass
+
 	input_fname  = sys.argv[1] if len(sys.argv) > 1 else 'firmware.asm'
 	output_fname = sys.argv[2] if len(sys.argv) > 2 else 'firmware.bin'
 
@@ -359,7 +365,7 @@ def main():
 	# Binary generation
 
 	try:
-		with open(output_fname, 'w') as bin_file:
+		with open(output_fname, 'w', encoding='ascii', newline='\n') as bin_file:
 			gen_binary(bin_file, label_asm)
 	except Exception as e:
 		sys.exit(e)
