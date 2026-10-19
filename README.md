@@ -4,29 +4,55 @@ A toy assembler for a toy architecture.
 
 ## Features
 
-- Line comments started by `;`. Text inside comments is not restricted to the ASCII character set.
+- Line comments started by `;`. Text inside comments is not restricted to the ASCII character set, unlike the other elements of the source code.
 
-- Symbolic addressing for branching instructions. Symbols follow the same naming rules as identifiers in C. Each symbol must have only one definition in the source, though there is no restriction on use before definition.
+- Symbolic addressing for branching instructions. Labels and targets are tracked via the Symbol Table and their addresses/offsets are placed in code during pseudoinstruction expansion.
 
 - Pseudo-instructions. The original ISA is quite small at 20 instructions, so these are very appealing for practical programming.
 
 ### General Syntax
 
+Below is the syntax for a single line of source code.
+
 ```
-label ":" mnemonic [immediate|target] ";" comment
+[[label ":"] mnemonic [immediate | target]] [";" comment]
 ```
 
-The immediate may be a signed decimal or an unsigned hexadecimal pattern preceded by `0x`. For native instructions, the immediate must fit within 4 bits.
+The input must be in the ASCII character set, except for text inside comments, for which there is no restriction. Comments span all the text up to the line break.
 
-Labels and targets are translated to 16-bit addresses and placed in code during pseudoinstruction expansion. Currently, a label cannot be placed on a line without an instruction.
+Labels are optional, and define a symbol associated to the instruction they lead. Currently, a label cannot be placed on a line without an instruction.
+
+While labels are case-sensitive, mnemonics are case-insensitive.
+
+Some instructions require immediate values, which may be signed decimal literals or unsigned hexadecimal literals preceded by `0x`. For native instructions, immediate values must fit within 4 bits.
+
+Targets use the same names as labels in order to reference existing symbols.
+
+Symbols follow the same naming rules as identifiers in C. Each symbol must have exactly one definition in the source code, though there is no restriction on use before definition.
+
+### Output
+
+The generated format is ASCII-encoded binary due to ease of use with VHDL standard packages. The output is a file where each instruction is represented as 8 chars '1' or '0' followed by a line feed.
 
 ### Usage
 
 A description of all options is shown by `-h` or `--help`.
 
-There are command line options for source and output file names. The source file name is a required positional parameter, while the output file name is optional and defaults to 'firmware.bin'.
+There are command line options for source and output file names. The source file name is a required positional parameter, while the output file name is optional and defaults to "firmware.bin".
 
-There is also a `verbose` flag which shows a table containing an abstract representation of the code just before binary generation, so that users can inspect the results of the pseudo instruction expansion and symbolic target resolution.
+There is also a `verbose` flag, which shows a table containing an abstract representation of the code just before binary generation, so that users can inspect the results of the pseudo instruction expansion and symbolic target resolution.
+
+Python 3.8 or later is required, and no third-party packages were used.
+
+### Error Messages
+
+The assembler emits error messages for invalid source code. These contain a reference to the line, a description of the error, and the line itself, if relevant. The errors are:
+
+- illegal characters in code (not in comments), since only printable ASCII characters are allowed;
+- invalid syntax;
+- label defined multiple times, with a reference to the first definition;
+- immediate in source larger than its allowed bit width;
+- use of undefined label.
 
 ## Instruction-set Architecture
 
@@ -35,13 +61,15 @@ The ISA is designed for the model of a stack machine with two stacks:
 - a main stack to hold data and, for most instructions, all operands;
 - a secondary stack to hold return addresses.
 
-There are no general-purpose registers, only an instruction pointer (IP) and stack pointer (SP), which are only accessible by special control flow instructions.
+The address space for the data stack is 64KiB of memory, while the address stack is meant to hold up to 16 addresses.
+
+There are no general-purpose registers, only an instruction pointer (IP) and stack pointer (SP), which are managed by control flow.
 
 There is one IO device that reads in or puts out one byte at a time. There are special instructions IN and OUT to do these operations.
 
 All instructions are 8 bits wide, with a 4-bit *opcode* followed by a 4-bit segment that may be an opcode extension (*opext*) or an *immediate*, depending on the instruction's format. Hence, there are two formats, called **extended** and **immediate**.
 
-Native instructions and their encodings.
+Native instructions and their encodings:
 
 |Mnemonic|Format   |Encoding  |
 |:-------|:-------:|:--------:|
@@ -66,9 +94,11 @@ Native instructions and their encodings.
 |DROP    |immediate|`1010iiii`|
 |DUP     |immediate|`1011iiii`|
 
+Note: `iiii` is a placeholder for the immediate value.
+
 ### Description of the Instructions' Behavior
 
-#### Native instructions
+#### Native Instructions
 
 - **HLT (_halt_)**: Stop execution indefinitely.
 
@@ -110,7 +140,7 @@ Native instructions and their encodings.
 
 - **DUP (_duplicate_)**: Copy one of the 4 topmost bytes on the data stack and push it on top. The immediate indicates which one as a value to be subtracted from SP. Hence, only the two lowest bits are relevant.
 
-Syntactic sugar was added for BEQ, JMP, and JAL: labels may be used as branch targets.
+Syntactic sugar was added for BEQ, JMP, and JAL: labels may be used as targets.
 
 #### Pseudoinstructions
 
